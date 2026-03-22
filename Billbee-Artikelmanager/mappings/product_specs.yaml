@@ -1,0 +1,334 @@
+# Per-manufacturer × category product specifications
+# ─────────────────────────────────────────────────────────────────────────────
+# Structure:
+#   <Manufacturer>:           (exact string as it appears in the Manufacturer
+#                              column of the Google Sheet — case-insensitive)
+#     <category>:             (category key, matches products.yaml — case-insensitive)
+#       default:              (base attributes for this manufacturer × category)
+#         material: ...       (free-form string; normalised via materials.yaml
+#                              for TARIC lookup — e.g. "textile", "stainless steel")
+#         countryOfOrigin: .. (2-letter ISO country code, e.g. CN)
+#         weight: ~           (kg, float; → Billbee "Weight" field)
+#         length: ~           (cm, float; → Billbee "LengthCm" field)
+#         width: ~            (cm, float; → Billbee "WidthCm" field)
+#         height: ~           (cm, float; → Billbee "HeightCm" field)
+#         cost: ~             (EUR, float; → Billbee "CostPrice" field)
+#         price: ~            (EUR, float; → Billbee "Price" field)
+#.        verp:  ~            (Billbe "Verpackungstyp" Name)
+#       small:                (size-specific overrides — only changed fields needed)
+#         weight: ...
+#
+# Lookup order: manufacturer → category → size (falls back to "default").
+# Unknown manufacturer or category → empty dict (no override; products.yaml
+# category defaults are used as final fallback in assign_taric.py).
+# ─────────────────────────────────────────────────────────────────────────────
+
+TRX:
+  rucksack:
+    default:
+      material: textile
+      countryOfOrigin: CN
+      weight:
+      length:
+      width:
+      height:
+      cost:
+      price:
+      verp: Kleinpaket-Klein
+    small:
+      weight: 310
+      length: 25.0
+      width: 21.0
+      height: 5.0
+      cost: 17.38
+      price:
+    big:
+      weight: 390
+      length: 31.0
+      width: 21.0
+      height: 5.0
+      cost: 19.56
+      price:
+      verp: Kleinpaket-Max
+    cord:
+      weight: 400
+      length: 
+      width: 
+      height: 
+      cost: 13.0
+      price:
+
+  schulranzen:
+    default:
+      material: textile
+      countryOfOrigin: CN
+      weight: 350
+      length: 32.0
+      width: 12.0
+      height: 26.0
+      cost: 12.26
+      price:
+      verp: Kleinpaket-Max
+
+  trolley:
+    default:
+      material: textile
+      countryOfOrigin: CN
+      weight: 500
+      length:
+      width:
+      height:
+      cost:
+      price:
+      verp: Kleinpaket-Max
+
+  bus:
+    default:
+      material: wood
+      countryOfOrigin: CN
+      weight: 250
+      length: 18.0
+      width: 11.0
+      height: 6.0
+      cost: 9.47
+      price:
+      verp: Kleinpaket-Max
+
+  sportbeutel:
+    default:
+      material: textile
+      countryOfOrigin: CN
+      weight: 180
+      length: 25.0
+      width: 21.0
+      height: 5.0
+      cost: 8.70
+      price:
+      verp: Kleinpaket-Klein
+
+  backpbrustg:
+    default:
+      material: textile
+      countryOfOrigin: CN
+      weight: 300
+      length:
+      width:
+      height:
+      cost:
+      price:
+      verp: Kleinpaket-Klein
+
+  flasche:
+    default:
+      material: stainless steel
+      countryOfOrigin: CN
+      weight:
+      length:
+      width:
+      height:
+      cost:
+      price:
+      verp: Kleinpaket-Max
+    '350':
+      weight: 150
+      length: 15.5
+      width: 6.5
+      height: 6.5
+      cost: 8.70
+      price:
+    '500':
+      weight: 180
+      length: 20.0
+      width: 6.5
+      height: 6.5
+      cost: 10.22
+      price:
+
+  brotdose:
+    default:
+      material: stainless steel
+      countryOfOrigin: CN
+      weight: 350
+      length: 17.0
+      width: 13.0
+      height: 6.0
+      cost: 10.60
+      price:
+      verp: Kleinpaket-Max
+
+  federmaepchen:
+    default:
+      material: textile
+      countryOfOrigin: CN
+      weight: 80
+      length: 20.0
+      width: 12.0
+      height: 5.0
+      cost: 4.96
+      price:
+      verp: Kleinpaket-Klein
+
+  motorikschleife:
+    default:
+      material: wood
+      countryOfOrigin: CN
+      weight: 250
+      length: 15.0
+      width: 11.0
+      height: 8.0
+      cost: 3.65
+      price:
+      verp: Kleinpaket-Max
+
+  rassel:
+    default:
+      material: wood
+      countryOfOrigin: CN
+      weight: 70
+      length: 9.0
+      width: 9.0
+      height: 2.0
+      cost: 3.77
+      price:
+      verp: Kleinpaket-Klein
+
+  flugzeug:
+    default:
+      material: wood
+      countryOfOrigin: CN
+      weight: 250
+      length: 25.0
+      width: 22.0
+      height: 7.0
+      cost: 10.22
+      price:
+      verp: Kleinpaket-Max
+
+FRE:
+  rucksack:
+    default:
+      material: textile
+      countryOfOrigin: CN
+      weight:
+      length:
+      width:
+      height:
+      cost:
+      price:
+      verp: Kleinpaket-Max
+    small:
+      weight: 310
+      length: 25.0
+      width: 21.0
+      height: 5.0
+      cost: 17.38
+      price:
+    big:
+      weight: 520
+      length: 31.0
+      width: 21.0
+      height: 5.0
+      cost: 19.56
+      price:
+
+  flasche:
+    default:
+      material: stainless steel
+      countryOfOrigin: CN
+      weight:
+      length:
+      width:
+      height:
+      cost:
+      price:
+      verp: Kleinpaket-Max
+    '350':
+      weight: 340
+      length: 15.5
+      width: 6.5
+      height: 6.5
+      cost: 8.70
+      price:
+    '500':
+      weight: 400
+      length: 20.0
+      width: 6.5
+      height: 6.5
+      cost: 10.22
+      price:
+
+  federmaepchen:
+    default:
+      material: textile
+      countryOfOrigin: CN
+      weight: 80
+      length: 20.0
+      width: 12.0
+      height: 5.0
+      cost: 4.96
+      price:
+      verp: Kleinpaket-Klein
+
+  sportbeutel:
+    default:
+      material: textile
+      countryOfOrigin: CN
+      weight: 235
+      length: 25.0
+      width: 21.0
+      height: 5.0
+      cost: 8.70
+      price:
+      verp: Kleinpaket-Klein
+
+UPS:
+  handtuch:
+    default:
+      material: cotton
+      countryOfOrigin: TY
+      weight:
+      length:
+      width:
+      height:
+      cost:
+      price:
+      verp: Kleinpaket-Klein
+    '30x50':
+      weight: 75
+      length: 
+      width: 
+      height: 
+      cost: 
+      price:
+    '50x100':
+      weight: 260
+      length: 
+      width: 
+      height: 
+      cost: 
+      price:
+    '70x140':
+      weight: 460
+      length: 
+      width: 
+      height: 
+      cost: 
+      price:
+      verp: Kleinpaket-Max
+    '80x200':
+      weight: 760
+      length: 
+      width: 
+      height: 
+      cost: 
+      price:
+      verp: Kleinpaket-Max
+    '100x210':
+      weight: 970
+      length: 
+      width: 
+      height: 
+      cost: 
+      price:
+      verp: OP303
+

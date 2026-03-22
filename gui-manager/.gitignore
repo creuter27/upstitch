@@ -1,0 +1,8 @@
+# gui-manager specific — root .gitignore covers most things
+frontend/node_modules/
+frontend/dist/
+.env
+*.pyc
+.DS_Store
+# SQLite DB (contains users/passwords, not for version control)
+data/app.db

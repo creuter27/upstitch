@@ -1,0 +1,414 @@
+/* =============================================================================
+   Customizer Admin Panel — Styles
+   ============================================================================= */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --color-bg:        #f0f2f5;
+  --color-surface:   #ffffff;
+  --color-border:    #e2e6ea;
+  --color-primary:   #3b82f6;
+  --color-primary-d: #2563eb;
+  --color-danger:    #ef4444;
+  --color-text:      #111827;
+  --color-muted:     #6b7280;
+  --color-selected:  #eff6ff;
+  --sidebar-w:       320px;
+  --header-h:        52px;
+  --radius:          8px;
+  --shadow:          0 1px 3px rgba(0,0,0,.12);
+}
+
+html, body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+
+.header {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--header-h);
+  background: var(--color-text);
+  color: #fff;
+  z-index: 100;
+  box-shadow: 0 2px 6px rgba(0,0,0,.2);
+}
+
+.header-inner {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+}
+
+.header-logo {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+
+.header-hint {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+/* ── App layout ──────────────────────────────────────────────────────────── */
+
+.app {
+  display: flex;
+  height: 100vh;
+  padding-top: var(--header-h);
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+
+.sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────────── */
+
+.tab-bar {
+  display: flex;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 12px 8px;
+  border: none;
+  background: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color .15s, border-color .15s;
+}
+
+.tab-btn:hover { color: var(--color-text); }
+
+.tab-btn.is-active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+/* ── Tab panels ───────────────────────────────────────────────────────────── */
+
+.tab-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tab-panel.is-hidden { display: none; }
+
+/* ── Panel sections ───────────────────────────────────────────────────────── */
+
+.panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--color-muted);
+  display: flex;
+  align-items: center;
+}
+
+/* ── Form elements ────────────────────────────────────────────────────────── */
+
+.field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.field-input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--color-text);
+  background: #fff;
+  transition: border-color .15s;
+}
+
+.field-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.field-input.field-sm { padding: 5px 8px; font-size: 12px; }
+
+.field-hint {
+  font-size: 11px;
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+
+.file-input {
+  font-size: 12px;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .15s, transform .1s;
+}
+.btn:active { transform: scale(.97); }
+
+.btn-primary   { background: var(--color-primary); color: #fff; }
+.btn-primary:hover { background: var(--color-primary-d); }
+
+.btn-secondary { background: var(--color-border); color: var(--color-text); }
+.btn-secondary:hover { background: #d1d5db; }
+
+.btn-danger    { background: var(--color-danger); color: #fff; }
+.btn-danger:hover { background: #dc2626; }
+
+.btn-sm  { padding: 5px 10px; font-size: 12px; }
+.btn-xs  { padding: 3px 7px;  font-size: 11px; }
+
+/* ── Rectangle list ───────────────────────────────────────────────────────── */
+
+.rect-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rect-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: background .1s, border-color .1s;
+  background: #fff;
+}
+
+.rect-list-item:hover { background: #f9fafb; border-color: #cbd5e1; }
+
+.rect-list-item.is-selected {
+  background: var(--color-selected);
+  border-color: var(--color-primary);
+}
+
+.rect-list-icon { font-size: 16px; }
+
+.rect-list-label {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.rect-list-meta {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+/* ── Global item lists (fonts / colors / images) ──────────────────────────── */
+
+.item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.item-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.item-row .field-input { flex: 1; }
+
+.color-picker {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Google Drive stub ────────────────────────────────────────────────────── */
+
+.gdrive-stub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f9fafb;
+  border: 1px dashed #d1d5db;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.gdrive-icon { font-size: 18px; }
+
+/* ── Canvas area ──────────────────────────────────────────────────────────── */
+
+.canvas-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+.canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.toolbar-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-muted);
+}
+
+.toolbar-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--color-border);
+}
+
+.canvas-wrap {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  position: relative;
+}
+
+#admin-canvas {
+  display: block;
+  box-shadow: 0 4px 20px rgba(0,0,0,.15);
+  border-radius: 4px;
+  cursor: crosshair;
+  image-rendering: pixelated;  /* keeps the canvas crisp when scaled up */
+}
+
+.canvas-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--color-muted);
+  pointer-events: none;
+}
+
+/* ── Rectangle properties panel ──────────────────────────────────────────── */
+
+.rect-props {
+  flex-shrink: 0;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rect-props-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--color-muted);
+}
+
+.props-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  align-items: end;
+}
+
+.props-grid .field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.prop-condition { font-size: 10px; color: #aaa; }
+
+.props-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* ── Export textareas ─────────────────────────────────────────────────────── */
+
+.export-textarea {
+  width: 100%;
+  font-family: 'Menlo', 'Consolas', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: #f9fafb;
+  resize: vertical;
+  color: var(--color-text);
+}
+
+/* ── Scrollbar styling (Webkit) ───────────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }

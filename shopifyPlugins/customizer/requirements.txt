@@ -1,0 +1,3 @@
+# Python dependencies for the customizer project.
+# Currently empty — the plugin is frontend-only (HTML/JS/CSS/Liquid).
+# Add packages here when backend scripts are introduced.

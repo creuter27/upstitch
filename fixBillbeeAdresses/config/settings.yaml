@@ -1,0 +1,42 @@
+# fixBillbeeAdresses — non-credential settings
+# Credentials (API keys, passwords) go in .env, not here.
+
+order_state_transitions:
+  # Order state to set all fetched orders to after address fixes are applied.
+  # Billbee automation rules are triggered per-order on this transition.
+  # Common states: 16 = In Bearbeitung (In fulfillment)
+  # Set to 0 to disable.
+  after_fix: 16
+
+  # Order state to set each order to after its shipping label is created successfully.
+  # Common states: 4 = Versendet (Shipped)
+  # Set to 0 to disable.
+  after_label: 4
+
+shipping_labels:
+  # Set enabled: true to create shipping labels automatically at the end of each run.
+  # Labels are created for all orders fetched at the start of the run.
+  # Run run_labels.py to create labels manually without running the address fixer.
+  enabled: false
+
+  # Folder where label PDFs are saved. One file per order: {order_number}.pdf
+  # Relative paths resolve from the project root (e.g. "labels" -> <project>/labels/).
+  # Absolute paths also work — use forward slashes even on Windows:
+  #   label_folder: "C:/Upstitch/Automations/Versandlabels"
+  # Do NOT use backslashes — YAML will misinterpret them as escape sequences.
+  label_folder: "labels"
+
+  # How long to keep polling for labels before giving up (minutes).
+  # The poller checks every 60 seconds: re-fetches each order and creates a
+  # label only once a "Verpackungstyp: ..." tag is present. This gives Billbee
+  # automation time to assign shipping profiles after the state change above.
+  # Orders without a package type at timeout are reported as errors.
+  polling_timeout_minutes: 15
+
+  # Billbee shipping provider ID. Leave at 0 to use the provider already
+  # configured on each order (set via Billbee rules / automations).
+  # Only change this if Billbee returns an error about the provider.
+  shipping_provider_id: 0
+
+  # Billbee shipping product ID within the provider. 0 = use order default.
+  shipping_provider_product_id: 0

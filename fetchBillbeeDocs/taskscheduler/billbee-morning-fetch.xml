@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<!--
+  Windows Task Scheduler — Billbee Morning Document Fetch
+  Runs Mon–Fri at 06:30.
+
+  BEFORE IMPORTING: replace the two occurrences of YOUR_USERNAME in <Principals>
+  with your actual Windows username. All paths use %USERPROFILE% automatically.
+
+  IMPORT (run once in an elevated command prompt or PowerShell):
+    schtasks /create /xml taskscheduler\billbee-morning-fetch.xml /tn "Billbee Morning Fetch"
+
+  TEST (run it immediately):
+    schtasks /run /tn "Billbee Morning Fetch"
+
+  VIEW LOGS:
+    .tmp\logs\morning_fetch_<timestamp>.log
+
+  DELETE:
+    schtasks /delete /tn "Billbee Morning Fetch" /f
+-->
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+
+  <RegistrationInfo>
+    <Description>Fetches Billbee invoices and delivery notes for orders in the configured state.</Description>
+    <Author>YOUR_USERNAME</Author>
+  </RegistrationInfo>
+
+  <Triggers>
+    <CalendarTrigger>
+      <StartBoundary>2026-01-01T06:30:00</StartBoundary>
+      <Enabled>true</Enabled>
+      <ScheduleByWeek>
+        <WeeksInterval>1</WeeksInterval>
+        <DaysOfWeek>
+          <Monday />
+          <Tuesday />
+          <Wednesday />
+          <Thursday />
+          <Friday />
+        </DaysOfWeek>
+      </ScheduleByWeek>
+    </CalendarTrigger>
+  </Triggers>
+
+  <Principals>
+    <Principal id="Author">
+      <!-- Only these two lines need YOUR_USERNAME replaced -->
+      <UserId>YOUR_USERNAME</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <ExecutionTimeLimit>PT1H</ExecutionTimeLimit>
+    <Enabled>true</Enabled>
+  </Settings>
+
+  <Actions Context="Author">
+    <Exec>
+      <!-- %USERPROFILE% expands automatically — no username needed here -->
+      <Command>%USERPROFILE%\Tresorit\Upstitch\code\fetchBillbeeDocs\run.bat</Command>
+      <WorkingDirectory>%USERPROFILE%\Tresorit\Upstitch\code\fetchBillbeeDocs</WorkingDirectory>
+    </Exec>
+  </Actions>
+
+</Task>

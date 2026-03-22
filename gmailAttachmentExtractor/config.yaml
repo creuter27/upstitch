@@ -1,0 +1,18 @@
+# Gmail Attachment Extractor — configuration
+# Run setup_cron.py after editing to install/update the cron job.
+
+schedule:
+  days: daily            # "daily" OR a list: ["Monday", "Wednesday", "Friday"]
+  time: "08:00"          # 24-h HH:MM — used by setup_cron.py to create the cron entry
+
+mailboxes:
+  - label: "Supplier Invoices"
+    # Any Gmail search query (same syntax as the Gmail search box)
+    query: "from:invoices@supplier.com has:attachment filename:pdf"
+    # Google Drive folder ID — get it from the folder URL:
+    # https://drive.google.com/drive/folders/<FOLDER_ID>
+    drive_folder_id: "YOUR_DRIVE_FOLDER_ID_HERE"
+
+  - label: "Bank Statements"
+    query: "subject:statement has:attachment filename:pdf"
+    drive_folder_id: "YOUR_DRIVE_FOLDER_ID_HERE"

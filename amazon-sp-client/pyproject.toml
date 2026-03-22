@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "amazon-sp-client"
+version = "0.1.0"
+description = "Shared Amazon Selling Partner API client for Prenerds automation projects"
+requires-python = ">=3.11"
+dependencies = [
+    "python-amazon-sp-api",
+    "python-dotenv",
+]
+
+[tool.setuptools]
+# Install amazon_sp_client.py as a top-level module (not a package directory)
+py-modules = ["amazon_sp_client"]

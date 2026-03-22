@@ -1,0 +1,120 @@
+# productionPrep — common configuration
+# Credentials (API keys, passwords) go in .env, not here.
+#
+# Platform-specific paths (output dirs, label folder) live in:
+#   config-mac.yaml  — macOS / Linux
+#   config-win.yaml  — Windows
+# Those files are merged on top of this one at runtime.
+
+# ---------------------------------------------------------------------------
+# Order states
+# ---------------------------------------------------------------------------
+# Billbee order state ID(s) to fetch for address fixing and document fetching.
+# Common states:
+#   1  = Bestellt (Received)       2  = Bestätigt (Confirmed)
+#   3  = Bezahlt                   4  = Versendet (Shipped)
+#   5  = Reklamation               6  = Geloescht
+#   7  = Abgeschlossen (Completed) 8  = Storniert
+#   9  = Archiviert               10  = Rated
+#  13  = Gepackt                  16  = Im_Fulfillment
+#  17  = Retoure
+# Single state:
+order_state_id: 3
+# Multiple states:
+# order_state_id: [3, 13]
+
+order_state_transitions:
+  # State to set each order to after address fixes and package type tags are applied.
+  # Triggered per-order immediately, not as a batch at the end.
+  # Billbee automation rules fire on this transition (shipping profiles, Verpackungstypen).
+  # Common: 16 = Im Fulfillment. Set to 0 to disable.
+  after_fix: 16
+
+  # State to set each order to after its shipping label is created successfully.
+  # Common: 4 = Versendet (Shipped). Set to 0 to disable.
+  after_label: 4
+
+# ---------------------------------------------------------------------------
+# Lookback window
+# ---------------------------------------------------------------------------
+# How many hours before the last recorded run to look back.
+# 48 h covers the weekend gap (Friday → Monday).
+lookback_hours: 48
+
+# Optional hard override: always fetch from this exact datetime.
+# Comment out to use lookback_hours.
+# lookback_from: "2026-01-15T06:00:00"
+
+# ---------------------------------------------------------------------------
+# Document fetch
+# ---------------------------------------------------------------------------
+# 'billbee'       — download PDFs via Billbee API (requires invoices/delivery
+#                   notes to have been generated in Billbee first)
+# 'google_drive'  — sync from a Google Drive folder (use this when Billbee's
+#                   automation saves documents directly to your Drive)
+document_source: google_drive
+
+# Which document types to fetch
+fetch_invoice: true
+fetch_delivery_note: true
+
+# Output directories — set per platform in config-mac.yaml / config-win.yaml
+
+# ---------------------------------------------------------------------------
+# Google Drive settings  (only used when document_source: google_drive)
+# ---------------------------------------------------------------------------
+# Path to OAuth2 Desktop credentials JSON from Google Cloud Console.
+# Leave commented out to use the default: credentials.json next to the google-client module.
+# google_drive_credentials: ~/Tresorit/Upstitch/code/google-client/credentials.json
+
+# Google Drive folder IDs — find the ID in the folder URL:
+# drive.google.com/drive/folders/<ID>
+google_drive_folder_id_invoice: "178kyM4ZEYtC7N0ATTX0NBapT0Yt4hmFZ"
+google_drive_folder_id_delivery_note: "1QA9KJ3ffH6H0VWWBsMiT63bG7TM8cecX"
+
+# ---------------------------------------------------------------------------
+# Billbee document fetch settings  (only used when document_source: billbee)
+# ---------------------------------------------------------------------------
+# If true, check whether each order's invoice exists in Billbee before
+# downloading. NOTE: Billbee's CreateInvoice API only renders existing
+# invoices — it does not create them. Set up a Billbee automation rule
+# (Settings → Automatisierungen) to auto-create invoices.
+auto_generate_invoice: true
+
+# File naming pattern for PDFs saved in Billbee mode.
+# Placeholders: {order_id}, {order_number}, {date} (YYYY-MM-DD), {type}
+# type is "invoice" or "delivery-note"
+# In Google Drive mode, filenames are preserved as-is from Drive.
+filename_pattern: "{type}-upstitch-{order_number}.pdf"
+
+# ---------------------------------------------------------------------------
+# Amazon SP-API fallback  (google_drive mode only)
+# ---------------------------------------------------------------------------
+# If true, invoices still "missing" after the Drive scan are looked up via
+# the Amazon Selling Partner API. Requires ~/code/amazon-sp-client to be
+# installed and its .env to contain valid SP-API credentials.
+try_amazon_invoice_fallback: false
+
+# ---------------------------------------------------------------------------
+# Shipping labels
+# ---------------------------------------------------------------------------
+shipping_labels:
+  # label_folder is set per platform in config-mac.yaml / config-win.yaml
+
+  # How long to keep polling for labels before giving up (minutes).
+  # The poller re-fetches each order every 60 s and creates a label only once a
+  # "Verpackungstyp: ..." tag is present (set by Billbee automation after after_fix).
+  polling_timeout_minutes: 15
+
+  # Billbee shipping provider ID. Leave at 0 to use the provider configured on
+  # each order (set via Billbee rules / automations).
+  shipping_provider_id: 0
+
+  # Billbee shipping product ID within the provider. 0 = use order default.
+  shipping_provider_product_id: 0
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+# Directory for log files. Supports ~ expansion. Created if it doesn't exist.
+log_dir: logs

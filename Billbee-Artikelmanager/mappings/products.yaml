@@ -1,0 +1,256 @@
+# Product attribute mappings
+# ─────────────────────────────────────────────────────────────────────────────
+# Each entry maps a canonical key to the list of tokens (abbreviations,
+# synonyms, historical names) that resolve to it.
+# Tokens are matched case-insensitively against SKU segments.
+#
+# To extend: add entries or additional tokens; the loader picks them up
+# automatically.
+# ─────────────────────────────────────────────────────────────────────────────
+
+manufacturers:
+  TRX:
+    tokens:
+    - Trixie Baby
+    - trixie
+  FRE:
+    tokens:
+    - Fresk
+  UPS:
+    tokens:
+    - Upstitch Studio
+    - upstitch studios
+    - upstitch
+    - hat
+  LSH:
+    tokens:
+    - L-Shop
+    - lshop
+categories:
+  rucksack:
+    tokens: [bp, backp]
+    valueInSet: 10
+  schulranzen:
+    tokens: [schulr]
+    valueInSet: 5
+  trolley:
+    tokens: [trol]
+    valueInSet: 5
+  bus:
+    tokens: []
+    valueInSet: 15
+  sportbeutel:
+    tokens: [sb, sportb, turnb, turnbeutel]
+    valueInSet: 20
+    taricCategory: rucksack
+  backpbrustg:
+    tokens: []
+    valueInSet: 20
+  flasche:
+    tokens: [bt, bottle, tflasche, thermosflasche]
+    valueInSet: 30
+  handtuch:
+    tokens: [ht, towel, tow, tw, towl]
+    valueInSet: 25
+  brotdose:
+    tokens: [brotd, lunchb, lunchbox]
+    valueInSet: 15
+  federmaepchen:
+    tokens: [federm, federmäppchen]
+    valueInSet: 40
+  motorikschleife:
+    tokens: [motoriks, moto]
+    valueInSet: 15
+  rassel:
+    tokens: [rattle, rass, ratt]
+    valueInSet: 15
+    taricCategory: spielzeug
+  flugzeug:
+    tokens: [holzflieger, flieger, flugz, plane, holzflugzeug]
+    valueInSet: 15
+variants:
+  triceratops:
+    tokens:
+    - tric
+  drache:
+    tokens:
+    - drac
+    - drag
+    - dragon
+  hai:
+    tokens:
+    - shark
+    - shar
+  hummel:
+    tokens:
+    - humm
+    - bumb
+    - bumblebee
+  papagei:
+    tokens:
+    - papa
+    - parr
+    - parrot
+  schmetterling:
+    tokens:
+    - schm
+    - butt
+    - butterfly
+  baer:
+    tokens:
+    - bear
+    - bär
+  affe:
+    tokens: [monkey, monk]
+  krokodil:
+    tokens: [crocodil, crocodile, croco, croc, krok]
+  dino:
+    tokens: []
+  einhorn:
+    tokens: [unicorn, unic, einh]
+  elefant:
+    tokens: [elefant, elephant, elep, elef]
+  fuchs:
+    tokens: [fox, fuch]
+  hase:
+    tokens: [rabbit, rabb]
+  katze:
+    tokens: [cat, katz]
+  loewe:
+    tokens: [lion, loew, löwe]
+  maus:
+    tokens: [mouse, mous]
+  alpaca:
+    tokens: [alpa, alpakka, alpaka]
+  hund:
+    tokens: [dog]
+  flamingo:
+    tokens: [flam]
+  frosch:
+    tokens: [frog, fros]
+  giraffe:
+    tokens: [gira]
+  igel:
+    tokens: [hedgehog, hedg]
+  nilpferd:
+    tokens: [hippo, hipp, nilp, flusspferd, flus]
+  koala:
+    tokens: [koal]
+  eule:
+    tokens: [owl]
+  pinguin:
+    tokens: [penguin, ping, peng]
+  eisbaer:
+    tokens: [eisb, pola, polarbear, polarbär, polar bear]
+  waschbaer:
+    tokens: [wasc, raco, racoon]
+  tiger:
+    tokens: [tige]
+  alligator:
+    tokens: [alli]
+  peacock:
+    tokens: [pfau, peac]
+  proudpeacock:
+    tokens: [prpe, stpf, prou]
+  charmingcat:
+    tokens: [chca, char]
+  daringdino:
+    tokens: [dari, dadi]
+  fiercefox:
+    tokens: [fier, fifo]
+  livelylion:
+    tokens: [live, lili]
+  woodsy:
+    tokens: [wsdy, woods yellow]
+  berries:
+    tokens: [berr, beeren, beer]
+  seahorse:
+    tokens: [seah, seepferdchen, seep]
+  swallow:
+    tokens: [swal, schwalben, schwalbe, schw]
+  indigodots:
+    tokens: [indi, indigo dots]
+  deerolive:
+    tokens: [dero, reholive, reh in grün, deer olive]
+  deerbrown:
+    tokens: [derb, reh in braun, deer brown]
+  deeramber:
+    tokens: [dera, deer amber, reh ocker]
+  surfboy:
+    tokens: [surf]
+  birds:
+    tokens: [vögel, bird, voegel, vögelchen, vöglein]
+  whale:
+    tokens: [wal, whal]
+  summerfruit:
+    tokens: [summ, sommerfruechte, sommerfrüchte, somm]
+  submarine:
+    tokens: [subm, uboot]
+  gardenflowers:
+    tokens: [gard, gartenblume, gartenblumen, gart]
+  dropsblue:
+    tokens: [tropfen blau, drbl, drops blue]
+  dropsrosa:
+    tokens: [tropfen rosa, drro, drops rosa]
+  dandelion:
+    tokens: [pusteblume, dand, pust]
+
+sizes:
+  handtuch:
+    30x50:
+      tokens: [30]
+    50x100:
+      tokens: [50]
+    70x140:
+      tokens: [70]
+    80x200:
+      tokens: [80]
+    100x210:
+      tokens: [100, sauna]
+  rucksack:
+    small:
+      tokens:
+      - s
+      - klein/small
+      - small/klein
+      - klein
+    big:
+      tokens:
+      - b
+      - groß
+      - gross
+      - gross/big
+      - big/gross
+      - groß/big
+      - big/groß
+  flasche:
+    '350':
+      tokens:
+      - s
+      - small
+      - klein
+    '500':
+      tokens:
+      - b
+      - big
+      - groß
+      - gross
+    cord:
+      tokens: []
+colors:
+  red:
+    tokens:
+    - red
+    - rot
+    - rd
+  green:
+    tokens:
+    - grün
+    - gruen
+    - grn
+    - gn
+  blue:
+    tokens:
+    - blau
+    - blu
+

@@ -1,0 +1,51 @@
+# Material normalisation map
+# ─────────────────────────────────────────────────────────────────────────────
+# Maps free-form material strings (as used in the 'material' field of each
+# category in products.yaml) to the internal TARIC lookup keys used in
+# assign_taric.py.
+#
+# Keys are matched case-insensitively.
+# Unknown strings fall back to 'other'.
+# ─────────────────────────────────────────────────────────────────────────────
+
+metal:
+  - metal
+  - stainless steel
+  - stainless
+  - edelstahl
+  - steel
+  - aluminium
+  - aluminum
+  - eisen
+
+textile:
+  - textile
+  - fabric
+  - cotton
+  - baumwolle
+  - polyester
+  - nylon
+  - canvas
+  - microfiber
+  - mikrofaser
+  - fleece
+  - vlies
+
+plastic:
+  - plastic
+  - kunststoff
+  - tritan
+  - polypropylen
+  - pp
+  - acryl
+
+wood:
+  - wood
+  - holz
+  - bamboo
+  - bambus
+  - wooden
+
+leather:
+  - leather
+  - leder

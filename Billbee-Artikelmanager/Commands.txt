@@ -1,0 +1,207 @@
+
+cd /Users/cr/code/Billbee-Artikelmanager
+
+
+Step 1 — Export FRE products from Billbee UI (manual)
+
+In Billbee: Artikel → Exportieren → Billbee XLSX, filter by manufacturer FRE (or search by SKU prefix "FRE-"), download the XLSX file.
+
+Step 2 — Import into a new Google Sheet
+
+Once you have the XLSX file, run:
+
+
+.venv/bin/python execution/import_from_xlsx.py --xlsx-file /path/to/fre_export.xlsx
+This creates a new sheet with downloaded, upload, and ColumnsToUpload tabs — same structure as TRX.
+
+Step 3 — Run the pipeline (in order)
+
+
+# 1. Enrich SKU-based fields (category, size, variant, color)
+.venv/bin/python execution/enrich_from_sku.py --sheet-url URL
+
+# 2. Fill BOM sub-article links for listing rows
+.venv/bin/python execution/fill_bom_skus.py --sheet-url URL --yes-all
+
+# 3. Apply product specs (weight, cost, dims, country of origin)
+.venv/bin/python execution/apply_product_specs.py --sheet-url URL
+Step 4 — Review, then export and upload
+
+Step 4: Find and insert the correct TARIC codes and cuntry of origin:
+.venv/bin/python execution/assign_taric.py \
+  --sheet-url "https://docs.google.com/spreadsheets/d/1m5S-9WLll63JQ8rKU6e_ANOxDvLzHE8W4K1SIzSdMyg" 2>&1
+
+# Export visible (filtered) rows to XLSX; apply your Google Sheets filter first
+.venv/bin/python execution/export_to_billbee_xlsx.py --sheet-url URL
+
+# Then in Billbee: Artikel → Importieren → Billbee XLSX
+
+
+
+OLD PROCESS:
+
+
+
+download all products (filered) to existing sheet: 
+.venv/bin/python execution/download_to_sheet.py --manufacturer TRX --sheet-url <url>
+
+
+URL="https://docs.google.com/spreadsheets/d/1m5S-9WLll63JQ8rKU6e_ANOxDvLzHE8W4K1SIzSdMyg"
+.venv/bin/python execution/enrich_from_sku.py --sheet-url "$URL" 2>&1
+
+Step 1: Fill in the custom fields by parsing the SKU
+To improve coverage for unmapped tokens (e.g. "polarbear", "dino"), add them to mappings/products.yaml and re-run enrichment — no code changes needed.
+
+Step 2: Fill in the BOM_SKUs for all listing rows
+URL="https://docs.google.com/spreadsheets/d/1m5S-9WLll63JQ8rKU6e_ANOxDvLzHE8W4K1SIzSdMyg"
+.venv/bin/python execution/fill_bom_skus.py --sheet-url "$URL" --yes-all 2>&1
+
+
+Step 3: validate and fix BOM↔listing mismatches
+Check for inconsistencies between listing- and physical SKUs:
+ interactive mode to approve or reject fixes one by one:
+
+URL="https://docs.google.com/spreadsheets/d/1m5S-9WLll63JQ8rKU6e_ANOxDvLzHE8W4K1SIzSdMyg"
+.venv/bin/python execution/validate_bom_skus.py --sheet-url "$URL" --yes-all 2>&1
+
+.venv/bin/python execution/validate_bom_skus.py \
+  --sheet-url "https://docs.google.com/spreadsheets/d/1m5S-9WLll63JQ8rKU6e_ANOxDvLzHE8W4K1SIzSdMyg" \
+  --listing-id 1215591577
+
+Summary of what the tool does:
+For each listing-format row with BOM SKUs, it parses both sides and compares manufacturer, category, variant, size (compound-aware), and color
+For compound listing sizes like bs (big+small), it extracts the per-item expected token by index: BOM[0]→b, BOM[1]→s
+Proposes a corrected BOM SKU by swapping the wrong slot value using the listing's raw token
+Approved fixes update the BOM_SKUs column in the sheet (Billbee is not changed — this stages the corrections for a future upload step)
+--dry-run shows all mismatches without prompting
+--listing-id PREFIX filters to a specific listing ID
+
+Step 4: Duplikate finden in Physical SKUs => zum Löschen markieren und ggf. Referenzen ändern:
+
+.venv/bin/python execution/dedup_physical.py \
+  --sheet-url "https://docs.google.com/spreadsheets/d/1m5S-9WLll63JQ8rKU6e_ANOxDvLzHE8W4K1SIzSdMyg" \
+  --dry-run 2>&1
+
+Step 5: Find duplicate listing SKUs, keep the oldest one and mark all others for deletion
+
+.venv/bin/python execution/dedup_listings.py \
+  --sheet-url "https://docs.google.com/spreadsheets/d/1m5S-9WLll63JQ8rKU6e_ANOxDvLzHE8W4K1SIzSdMyg" \
+  --yes-all 2>&1
+
+  Step 6: check titles against found attributes:
+
+  .venv/bin/python execution/check_title_vs_fields.py \
+    --sheet-url "https://docs.google.com/spreadsheets/d/1m5S-9WLll63JQ8rKU6e_ANOxDvLzHE8W4K1SIzSdMyg" 2>&1
+
+
+
+Step 6: Find and insert the correct TARIC codes and cuntry of origin:
+.venv/bin/python execution/assign_taric.py \
+  --sheet-url "https://docs.google.com/spreadsheets/d/1m5S-9WLll63JQ8rKU6e_ANOxDvLzHE8W4K1SIzSdMyg" 2>&1
+
+
+Step 7: Fill in size, weight and cost fields:
+.venv/bin/python execution/apply_product_specs.py --sheet-url URL --dry-run
+
+
+Recommended workflow for the upload of the modified product list
+
+# 1. Take a backup first
+.venv/bin/python execution/backup_billbee.py
+
+# 2. Dry-run: see which physical products are missing
+.venv/bin/python execution/create_missing_physical.py --sheet-url URL
+
+# 3. Create missing physical products in Billbee + append to sheet
+.venv/bin/python execution/create_missing_physical.py --sheet-url URL --execute
+
+# 4. Dry-run: verify weight/dims will be filled from product_specs.yaml
+.venv/bin/python execution/apply_product_specs.py --sheet-url URL --dry-run
+
+# 5. Apply specs to sheet
+.venv/bin/python execution/apply_product_specs.py --sheet-url URL
+
+# 6. Dry-run the full upload to Billbee
+.venv/bin/python execution/upload_to_billbee.py --sheet-url URL
+
+# 7. Execute the upload
+.venv/bin/python execution/upload_to_billbee.py --sheet-url URL --execute
+
+# 8. (Later, separately) Delete Action=delete rows
+.venv/bin/python execution/upload_to_billbee.py --sheet-url URL --execute --delete
+
+# If anything goes wrong — restore from backup
+.venv/bin/python execution/restore_from_backup.py --backup-file backups/billbee_YYYY-MM-DD_HHMMSS.json --execute
+
+
+
+
+Workflow with File upload to Billbee:
+
+This exports only the rows that are visible in the sheet (i.e. not hidden by your current Google Sheets filter). 
+Apply your filter first, then run the command.
+
+.venv/bin/python execution/export_to_billbee_xlsx.py \
+  --sheet-url "https://docs.google.com/spreadsheets/d/1m5S-9WLll63JQ8rKU6e_ANOxDvLzHE8W4K1SIzSdMyg"
+
+Useful variants:
+
+# Check what would be exported without writing the file:
+.venv/bin/python execution/export_to_billbee_xlsx.py \
+  --sheet-url "https://docs.google.com/spreadsheets/d/1m5S-9WLll63JQ8rKU6e_ANOxDvLzHE8W4K1SIzSdMyg" \
+  --dry-run
+
+# Export all rows (ignore the filter):
+.venv/bin/python execution/export_to_billbee_xlsx.py \
+  --sheet-url "https://docs.google.com/spreadsheets/d/1m5S-9WLll63JQ8rKU6e_ANOxDvLzHE8W4K1SIzSdMyg" \
+  --all
+
+# Custom output filename:
+.venv/bin/python execution/export_to_billbee_xlsx.py \
+  --sheet-url "https://docs.google.com/spreadsheets/d/1m5S-9WLll63JQ8rKU6e_ANOxDvLzHE8W4K1SIzSdMyg" \
+  --output trx_import.xlsx
+
+After the file is created: Billbee → Artikel → Importieren → Billbee XLSX → select the file.
+
+
+#############
+Reordering:
+
+Usage for Trixie:
+
+Step 1 — login once:
+.venv/bin/python execution/b2b_cart.py setup --manufacturer TRX --url https://b2b.trixie-baby.com/
+    
+Step 2 — scrape the catalog once:
+.venv/bin/python execution/b2b_cart.py explore --manufacturer TRX
+If there is a page that contains all products (Trixie):
+
+.venv/bin/python execution/b2b_cart.py explore --manufacturer TRX \
+    --url https://b2b.trixie-baby.com/products-1 --no-crawl
+
+With --no-crawl, only the given URL is scraped (with full load-more scrolling). No links are followed. 
+For Trixie this is the /products-1 SHOP page that lists all 949 products.
+
+Reorder process:
+Repeat Step 2 — re-scrape the catalog if necessary:
+.venv/bin/python execution/b2b_cart.py explore --manufacturer TRX --refresh
+Step 3 — order (after mapping is filled):
+.venv/bin/python execution/b2b_cart.py order --manufacturer TRX --dry-run
+Adding Fresk later:
+
+Skip list (.tmp/TRX_skip.txt):
+Auto-populated after each crawl with URLs that were visited, had 0 products, and yielded 0 new links
+Human-readable, one URL per line, # lines are comments you can add manually
+Checked before any URL enters the queue
+
+map command (also runs automatically after a successful explore):
+
+.venv/bin/python execution/b2b_cart.py map --manufacturer TRX
+
+Reads the mapping tab (Kategorie / Größe / Herstellername / Avoid)
+Reads the TRX B2B Catalog tab
+Reads the ProductList tab
+For each ProductList row missing an EAN: finds the matching B2B product using the mapping + variant tokens from products.yaml
+Batch-writes matched EANs into the EAN column
+
+.venv/bin/python execution/b2b_cart.py add-stock --manufacturer TRX --tab "Order 2026-03-08"

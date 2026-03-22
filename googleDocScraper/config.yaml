@@ -1,0 +1,5 @@
+# Configuration for clone_gdocs_from_sheet.py
+
+# Google Drive folder name where cloned files will be placed.
+# The folder will be created if it doesn't already exist.
+destination_folder: GNOpartners

@@ -1,0 +1,57 @@
+id: billbee-artikelmanager
+name: Artikel
+path: ../Billbee-Artikelmanager
+description: Product catalog management pipeline - download, enrich, validate, upload
+start_url: https://docs.google.com/spreadsheets/d/1m5S-9WLll63JQ8rKU6e_ANOxDvLzHE8W4K1SIzSdMyg
+functions:
+  - name: "1. Download from Billbee"
+    command: ".venv/bin/python execution/download_to_sheet.py"
+    description: "Download all products from Billbee API to Google Sheet"
+  - name: "2. Enrich from SKU"
+    command: ".venv/bin/python execution/enrich_from_sku.py"
+    description: "Parse SKU → fill Manufacturer/Category/Size/Variant/Color"
+  - name: "3. Fill BOM SKUs"
+    command: ".venv/bin/python execution/fill_bom_skus.py --yes-all"
+    description: "Derive BOM items from listing SKUs"
+  - name: "4. Validate BOM SKUs"
+    command: ".venv/bin/python execution/validate_bom_skus.py --yes-all"
+    description: "Cross-check BOM items against listing attributes"
+  - name: "5. Dedup Physical"
+    command: ".venv/bin/python execution/dedup_physical.py"
+    description: "Mark duplicate physical rows Action=delete"
+  - name: "6. Dedup Listings"
+    command: ".venv/bin/python execution/dedup_listings.py"
+    description: "Mark duplicate listing SKUs Action=delete"
+  - name: "7. Apply Product Specs"
+    command: ".venv/bin/python execution/apply_product_specs.py"
+    description: "Fill weight/dims/cost/price from product_specs.yaml"
+  - name: "8. Assign TARIC"
+    command: ".venv/bin/python execution/assign_taric.py"
+    description: "Assign TARIC codes + country of origin"
+  - name: "9. Create Missing Physical"
+    command: ".venv/bin/python execution/create_missing_physical.py --execute"
+    description: "Create missing physical SKUs in Billbee"
+    requires_confirm: true
+  - name: "10. Sync to Upload Tab"
+    command: ".venv/bin/python execution/sync_pipeline_to_upload.py"
+    description: "Sync downloaded tab → upload tab"
+  - name: "11. Upload to Billbee (PATCH)"
+    command: ".venv/bin/python execution/upload_to_billbee.py --execute"
+    description: "PATCH 8 patchable fields to Billbee API"
+    requires_confirm: true
+  - name: "12. Export to XLSX"
+    command: ".venv/bin/python execution/export_to_billbee_xlsx.py"
+    description: "Export non-patchable fields for manual Billbee import"
+  - name: "Backup Billbee"
+    command: ".venv/bin/python execution/backup_billbee.py"
+    description: "Snapshot all Billbee products to JSON backup"
+  - name: "Diagnose Sheet"
+    command: ".venv/bin/python execution/diagnose_sheet.py"
+    description: "Check sheet structure and missing columns"
+  - name: "Check Titles"
+    command: ".venv/bin/python execution/check_title_vs_fields.py"
+    description: "Validate product titles match SKU attributes"
+file_tree:
+  - mappings/
+permissions_required:
+  - billbee

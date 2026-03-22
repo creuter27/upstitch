@@ -1,0 +1,16 @@
+id: google-doc-scraper
+name: googleDocScraper
+path: ../googleDocScraper
+description: Clone Google Docs from a Google Sheet URL list to a Drive folder
+venv: .venv
+functions:
+  - name: "Clone Google Docs"
+    command: ".venv/bin/python clone_gdocs_from_sheet.py"
+    description: "Scan sheet for Drive links and clone to destination folder"
+  - name: "Rewrite Links Only"
+    command: ".venv/bin/python clone_gdocs_from_sheet.py --rewrite-only"
+    description: "Retry rewriting cell formulas with cloned IDs (skip cloning)"
+file_tree:
+  - "."
+permissions_required:
+  - admin

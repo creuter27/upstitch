@@ -1,0 +1,174 @@
+# Address test cases — one case per entry.
+#
+# Each case documents a real address pattern seen in production.
+# Fields:
+#   description:      human-readable label
+#   addr:             input ShippingAddress fields (only relevant fields needed)
+#   expected_issues:  list of issue codes that check() must return (subset match — extra OK)
+#   expected_fix:     dict of fields that _deterministic_suggestion() must return
+#                     (subset match — extra fields in actual fix are OK)
+#   notes:            optional context / source order
+
+cases:
+
+  # ── House number in street field (end) ──────────────────────────────────────
+  - description: "House number embedded at end of street"
+    addr:
+      Street: "Hauptstraße 26"
+      HouseNumber: ""
+      CountryISO2: "DE"
+      Zip: "12345"
+      City: "Berlin"
+    expected_issues:
+      - HOUSE_NUMBER_IN_STREET
+    expected_fix:
+      Street: "Hauptstraße"
+      HouseNumber: "26"
+
+  - description: "House number with letter suffix at end of street"
+    addr:
+      Street: "Musterweg 26a"
+      HouseNumber: ""
+      CountryISO2: "DE"
+      Zip: "12345"
+      City: "Berlin"
+    expected_issues:
+      - HOUSE_NUMBER_IN_STREET
+    expected_fix:
+      Street: "Musterweg"
+      HouseNumber: "26a"
+
+  - description: "House number with trailing floor text"
+    addr:
+      Street: "Berliner Str. 14b EG"
+      HouseNumber: ""
+      CountryISO2: "DE"
+      Zip: "12345"
+      City: "Berlin"
+    expected_issues:
+      - HOUSE_NUMBER_IN_STREET
+    expected_fix:
+      Street: "Berliner Str."
+      HouseNumber: "14b"
+      AddressAddition: "EG"
+
+  # ── House number at start of street ─────────────────────────────────────────
+  - description: "House number at start of street (26 Auenweg) — Austrian order"
+    notes: "Real case: Marina Unterweger, AT, OpenCage confirmed Auenweg 26"
+    addr:
+      Street: "26 Auenweg"
+      HouseNumber: ""
+      CountryISO2: "AT"
+      Zip: "9813"
+      City: "Möllbrücke"
+    expected_issues:
+      - HOUSE_NUMBER_AT_START_OF_STREET
+    expected_fix:
+      Street: "Auenweg"
+      HouseNumber: "26"
+
+  # ── Street field contains only a house number ────────────────────────────────
+  - description: "Street is only a house number, company may hold street name"
+    notes: "Real case: Judith Becker, DE, Street=36 Company=Knippchen"
+    addr:
+      Street: "36"
+      HouseNumber: ""
+      Company: "Knippchen"
+      CountryISO2: "DE"
+      Zip: "52393"
+      City: "Hürtgenwald"
+    expected_issues:
+      - STREET_IS_HOUSE_NUMBER
+    expected_fix:
+      HouseNumber: "36"
+      Street: ""
+
+  - description: "Street is only a house number, no company"
+    addr:
+      Street: "14a"
+      HouseNumber: ""
+      Company: ""
+      CountryISO2: "DE"
+      Zip: "12345"
+      City: "Berlin"
+    expected_issues:
+      - STREET_IS_HOUSE_NUMBER
+    expected_fix:
+      HouseNumber: "14a"
+      Street: ""
+
+  # ── ZIP has country prefix ───────────────────────────────────────────────────
+  - description: "ZIP has German country prefix D-"
+    addr:
+      Street: "Hauptstraße"
+      HouseNumber: "1"
+      CountryISO2: "DE"
+      Zip: "D-86899"
+      City: "Landsberg"
+    expected_issues:
+      - ZIP_HAS_COUNTRY_PREFIX
+    expected_fix:
+      Zip: "86899"
+
+  - description: "ZIP has Luxembourg prefix L-"
+    addr:
+      Street: "Rue de la Gare"
+      HouseNumber: "5"
+      CountryISO2: "LU"
+      Zip: "L-0826"
+      City: "Kehlen"
+    expected_issues:
+      - ZIP_HAS_COUNTRY_PREFIX
+    expected_fix:
+      Zip: "0826"   # leading zero preserved by strip_zip_prefix; OpenCage returns the correct 4-digit LU zip
+
+  - description: "ZIP has Austrian prefix A-"
+    addr:
+      Street: "Bergstraße"
+      HouseNumber: "3"
+      CountryISO2: "AT"
+      Zip: "A-6020"
+      City: "Innsbruck"
+    expected_issues:
+      - ZIP_HAS_COUNTRY_PREFIX
+    expected_fix:
+      Zip: "6020"
+
+  # ── House number in AddressAddition ─────────────────────────────────────────
+  - description: "House number entered in AddressAddition field"
+    addr:
+      Street: "Musterstraße"
+      HouseNumber: ""
+      AddressAddition: "42"
+      CountryISO2: "DE"
+      Zip: "12345"
+      City: "Berlin"
+    expected_issues:
+      - HOUSE_NUMBER_IN_ADDITION
+    expected_fix:
+      HouseNumber: "42"
+      AddressAddition: ""
+
+  # ── Street normalisation (check_address finds no issue; geocode handles it) ─
+  - description: "str. abbreviation in street — no issue raised by check_address"
+    notes: "Normalisation (Str.→Straße) is handled by geocode+_is_street_normalization, not check_address"
+    addr:
+      Street: "Hallgarter Str."
+      HouseNumber: "1"
+      CountryISO2: "DE"
+      Zip: "65346"
+      City: "Eltville am Rhein"
+    expected_issues: []
+    expected_fix: {}
+
+  # ── Missing house number (no number anywhere) ────────────────────────────────
+  - description: "Street filled but house number missing and not detectable"
+    addr:
+      Street: "Gartenweg"
+      HouseNumber: ""
+      CountryISO2: "DE"
+      Zip: "12345"
+      City: "Berlin"
+    expected_issues:
+      - MISSING_HOUSE_NUMBER
+    expected_fix: {}

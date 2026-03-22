@@ -1,0 +1,18 @@
+# Environment & secrets
+.env
+credentials.json
+token.json
+
+# Intermediate files
+.tmp/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv-mac/
+.venv-win/
+venv/
+
+# macOS
+.DS_Store

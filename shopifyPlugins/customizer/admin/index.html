@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Customizer Admin</title>
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+
+<header class="header">
+  <div class="header-inner">
+    <span class="header-logo">⬡ Customizer Admin</span>
+    <span class="header-hint">Configure personalization for your Shopify products</span>
+  </div>
+</header>
+
+<div class="app">
+
+  <!-- ════════════════════ LEFT PANEL ═══════════════════════════════════ -->
+  <aside class="sidebar">
+
+    <!-- ── Tabs ────────────────────────────────────────────────────── -->
+    <div class="tab-bar">
+      <button class="tab-btn is-active" data-tab="product">Product</button>
+      <button class="tab-btn" data-tab="global">Global</button>
+      <button class="tab-btn" data-tab="export">Export</button>
+    </div>
+
+    <!-- ── Product tab ─────────────────────────────────────────────── -->
+    <div class="tab-panel" id="tab-product">
+
+      <section class="panel-section">
+        <h3 class="section-title">Preview image</h3>
+        <label class="field-label">Image URL
+          <input type="url" id="preview-url" class="field-input"
+            placeholder="https://cdn.shopify.com/…/image.jpg" />
+        </label>
+        <p class="field-hint">Or upload a local file for reference only:</p>
+        <input type="file" id="preview-file" accept="image/*" class="file-input" />
+        <button class="btn btn-secondary btn-sm" id="load-image-btn">Load image</button>
+      </section>
+
+      <section class="panel-section">
+        <h3 class="section-title">
+          Rectangles
+          <button class="btn btn-primary btn-sm" id="add-rect-btn" style="float:right">+ Add</button>
+        </h3>
+        <p class="field-hint">Click-and-drag on the canvas to draw a rectangle, or use Add to create one at a default position.</p>
+        <div id="rect-list" class="rect-list">
+          <!-- Populated by admin.js -->
+        </div>
+      </section>
+
+    </div><!-- /tab-product -->
+
+    <!-- ── Global tab ──────────────────────────────────────────────── -->
+    <div class="tab-panel is-hidden" id="tab-global">
+
+      <section class="panel-section">
+        <h3 class="section-title">Fonts</h3>
+        <p class="field-hint">System fonts need no URL. Custom fonts must be hosted (e.g. in Shopify's Files).</p>
+        <div id="fonts-list" class="item-list"></div>
+        <button class="btn btn-secondary btn-sm" id="add-font-btn">+ Add font</button>
+      </section>
+
+      <section class="panel-section">
+        <h3 class="section-title">Colors</h3>
+        <p class="field-hint">Hex values the customer can pick from for text rectangles.</p>
+        <div id="colors-list" class="item-list"></div>
+        <button class="btn btn-secondary btn-sm" id="add-color-btn">+ Add color</button>
+      </section>
+
+      <section class="panel-section">
+        <h3 class="section-title">Image library</h3>
+        <p class="field-hint">
+          Images available in all image rectangles.
+          <!-- Google Drive integration stub — can be wired up later -->
+        </p>
+        <div id="images-list" class="item-list"></div>
+        <button class="btn btn-secondary btn-sm" id="add-image-btn">+ Add image</button>
+        <div class="gdrive-stub">
+          <span class="gdrive-icon">📁</span>
+          <span>Google Drive integration — <em>coming soon</em></span>
+        </div>
+      </section>
+
+    </div><!-- /tab-global -->
+
+    <!-- ── Export tab ──────────────────────────────────────────────── -->
+    <div class="tab-panel is-hidden" id="tab-export">
+
+      <section class="panel-section">
+        <h3 class="section-title">Product config metafield</h3>
+        <p class="field-hint">
+          Copy this JSON into:<br>
+          <strong>Shopify Admin → Products → [product] → Metafields → customizer.config</strong>
+        </p>
+        <textarea id="export-product" class="export-textarea" readonly rows="12"></textarea>
+        <button class="btn btn-primary" id="copy-product-btn">Copy</button>
+      </section>
+
+      <section class="panel-section">
+        <h3 class="section-title">Global settings metafield</h3>
+        <p class="field-hint">
+          Copy this JSON into:<br>
+          <strong>Shopify Admin → Settings → Custom data → Shop → customizer.global_settings</strong>
+        </p>
+        <textarea id="export-global" class="export-textarea" readonly rows="12"></textarea>
+        <button class="btn btn-primary" id="copy-global-btn">Copy</button>
+      </section>
+
+      <section class="panel-section">
+        <h3 class="section-title">Variant preview image</h3>
+        <p class="field-hint">
+          For each variant, set the metafield:<br>
+          <strong>customizer.preview_image</strong> = URL of the variant's preview image
+        </p>
+        <p class="field-hint">The URL you loaded on the Product tab is a good starting point:</p>
+        <textarea id="export-preview" class="export-textarea" readonly rows="3"></textarea>
+        <button class="btn btn-primary" id="copy-preview-btn">Copy</button>
+      </section>
+
+    </div><!-- /tab-export -->
+
+  </aside>
+
+  <!-- ════════════════════ CANVAS AREA ══════════════════════════════════ -->
+  <main class="canvas-area">
+    <div class="canvas-toolbar">
+      <label class="toolbar-item">
+        <input type="checkbox" id="show-overlay" checked /> Show overlays
+      </label>
+      <span class="toolbar-sep"></span>
+      <span class="toolbar-item" id="canvas-dims">No image loaded</span>
+    </div>
+
+    <div class="canvas-wrap" id="canvas-wrap">
+      <canvas id="admin-canvas"></canvas>
+      <div class="canvas-placeholder" id="canvas-placeholder">
+        Load a preview image to start placing rectangles
+      </div>
+    </div>
+
+    <!-- Properties panel for the selected rectangle -->
+    <div class="rect-props" id="rect-props" style="display:none;">
+      <h4 class="rect-props-title">Rectangle properties</h4>
+
+      <div class="props-grid">
+        <label class="field-label">Label
+          <input type="text" id="prop-label" class="field-input field-sm" placeholder="e.g. Name" />
+        </label>
+        <label class="field-label">Type
+          <select id="prop-type" class="field-input field-sm">
+            <option value="text">Text</option>
+            <option value="image">Image</option>
+          </select>
+        </label>
+        <label class="field-label">Placeholder <span class="prop-condition text-only">(text)</span>
+          <input type="text" id="prop-placeholder" class="field-input field-sm" placeholder="Enter your text…" />
+        </label>
+        <label class="field-label">Max characters <span class="prop-condition text-only">(text, 0 = unlimited)</span>
+          <input type="number" id="prop-maxchars" class="field-input field-sm" min="0" value="0" />
+        </label>
+        <label class="field-label">X (px)
+          <input type="number" id="prop-x" class="field-input field-sm" />
+        </label>
+        <label class="field-label">Y (px)
+          <input type="number" id="prop-y" class="field-input field-sm" />
+        </label>
+        <label class="field-label">Width (px)
+          <input type="number" id="prop-w" class="field-input field-sm" />
+        </label>
+        <label class="field-label">Height (px)
+          <input type="number" id="prop-h" class="field-input field-sm" />
+        </label>
+      </div>
+
+      <div class="props-actions">
+        <button class="btn btn-danger btn-sm" id="delete-rect-btn">Delete rectangle</button>
+      </div>
+    </div>
+  </main>
+
+</div><!-- /app -->
+
+<script src="admin.js"></script>
+</body>
+</html>

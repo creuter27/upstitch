@@ -1,0 +1,100 @@
+# Morning document fetch configuration
+# Runs every weekday at 06:30 — see launchd/com.billbee.morning-fetch.plist
+
+# ---------------------------------------------------------------------------
+# Document source
+# ---------------------------------------------------------------------------
+# 'billbee'       — download PDFs via Billbee API (requires invoices/delivery
+#                   notes to have been generated in Billbee first)
+# 'google_drive'  — sync from a Google Drive folder (use this when Billbee's
+#                   automation saves documents directly to your Drive)
+document_source: google_drive
+
+# ---------------------------------------------------------------------------
+# Google Drive settings  (only used when document_source: google_drive)
+# ---------------------------------------------------------------------------
+# Path to OAuth2 Desktop credentials JSON downloaded from Google Cloud Console.
+# Leave commented out to use the default: credentials.json next to the google-client module.
+# Only set this if you need to override the location.
+# google_drive_credentials: ~/code/google-client/credentials.json
+
+# Google Drive folder IDs for invoices and delivery notes.
+# Find the ID in the folder URL: drive.google.com/drive/folders/<ID>
+google_drive_folder_id_invoice: "178kyM4ZEYtC7N0ATTX0NBapT0Yt4hmFZ"
+google_drive_folder_id_delivery_note: "1QA9KJ3ffH6H0VWWBsMiT63bG7TM8cecX"
+
+# ---------------------------------------------------------------------------
+# Billbee settings  (only used when document_source: billbee)
+# ---------------------------------------------------------------------------
+# Billbee order state ID(s) to fetch documents for.
+# Common states:
+#   1  = Bestellt (Received)
+#   2  = Bestätigt (Confirmed)
+#   3  = Bezahlt
+#   4  = Versendet (Shipped)
+#   5  = Reklamation
+#   6  = Geloescht
+#   7  = Abgeschlossen (Completed)
+#   8  = Storniert
+#   9  = Archiviert
+#  10  = Rated
+#  11  = Mahnung
+#  12  = Mahnung2
+#  13  = Gepackt 
+#  14  = Angeboten 
+#  15  = Zahlungserinnerung 
+#  16  = Im_Fulfillment 
+#  17  = Retoure 
+# Single state:
+order_state_id: 3
+# Multiple states:
+# order_state_id: [3, 13]
+
+# If true, check whether each order's invoice exists in Billbee before
+# downloading. NOTE: Billbee's CreateInvoice API only renders existing
+# invoices — it does not create them. To auto-create invoices, set up a
+# Billbee automation rule (Settings → Automatisierungen).
+auto_generate_invoice: true
+
+# File naming pattern for PDFs saved in Billbee mode.
+# Placeholders: {order_id}, {order_number}, {date} (YYYY-MM-DD), {type}
+# type is "invoice" or "delivery-note"
+# In Google Drive mode, filenames are preserved as-is from Drive.
+filename_pattern: "{type}-upstitch-{order_number}.pdf"
+
+# ---------------------------------------------------------------------------
+# Shared settings
+# ---------------------------------------------------------------------------
+# Output directories — invoices and delivery notes can go to different folders.
+# Supports ~ expansion. Directories are created if they don't exist.
+output_dir_invoice: Billbee-Documents/invoices
+output_dir_delivery_note: Billbee-Documents/delivery-notes
+
+# How many hours before the last recorded run to look back.
+# 26 h covers the weekend gap (Friday → Monday).
+lookback_hours: 48
+
+# Optional hard override: always fetch from this exact datetime.
+# Comment out to use lookback_hours.
+# lookback_from: "2026-01-15T06:00:00"
+
+# Which document types to fetch
+fetch_invoice: true
+fetch_delivery_note: true
+
+# ---------------------------------------------------------------------------
+# Amazon SP-API fallback (google_drive mode only)
+# ---------------------------------------------------------------------------
+# If true, invoices still "missing" after the Drive scan are looked up via
+# the Amazon Selling Partner API. Requires ~/code/amazon-sp-client to be
+# installed and its .env to contain valid SP-API credentials.
+try_amazon_invoice_fallback: false
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+# Directory for log files. Two files are written per run:
+#   morning_fetch_{timestamp}.log   — stdout mirror (for debugging)
+#   fetchDocuments_{timestamp}.log  — structured report (summary + full list)
+# Supports ~ expansion. Directory is created if it doesn't exist.
+log_dir: logs

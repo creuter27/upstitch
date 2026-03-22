@@ -1,0 +1,11 @@
+# Verpackungstypen — local fallback list
+# Billbee's API does not expose Verpackungstypen, so add yours here.
+# Format:
+#   - name: Brief
+#     id: null  # set to Billbee's internal ID if known
+package_types:
+  - name: Kleinpaket-Klein
+  - name: Kleinpaket-Max
+  - name: OP303
+  - name: Vogelhauskarton
+  - name: Kapu-karton

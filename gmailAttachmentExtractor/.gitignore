@@ -1,0 +1,8 @@
+.venv-mac/
+.venv-win/
+.tmp/
+.state.json
+.token.json
+__pycache__/
+*.pyc
+.env

@@ -1,0 +1,10 @@
+# productionPrep — macOS-specific path settings
+# These override the corresponding keys in config.yaml on macOS/Linux.
+
+# Output directories for fetched documents
+# Adjust to wherever you want invoices/delivery notes saved on this Mac.
+output_dir_invoice: ~/Downloads/upstitch/invoices
+output_dir_delivery_note: ~/Downloads/upstitch/delivery-notes
+
+shipping_labels:
+  label_folder: "~/Downloads/upstitch/shipping-labels"

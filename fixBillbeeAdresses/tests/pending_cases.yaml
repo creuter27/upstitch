@@ -1,0 +1,101 @@
+cases:
+- description: 'Auto: Order #304-6488156-3898760 (DE)'
+  timestamp: '2026-03-13T05:28:56Z'
+  outcome: manually_edited
+  addr:
+    FirstName: Victoria
+    LastName: Serova
+    Company: Unterlindhofstr
+    Street: '16'
+    Zip: '93173'
+    City: Wenzenbach
+    CountryISO2: DE
+  expected_issues: []
+  expected_fix: {}
+  system_suggestion:
+    HouseNumber: '16'
+    Street: ''
+  user_edit:
+    Company: ''
+    Street: Unterlindhofstr
+    HouseNumber: '16'
+- description: 'Auto: Order #302-7578467-3394703 (DE)'
+  timestamp: '2026-03-16T05:16:31Z'
+  outcome: manually_edited
+  addr:
+    FirstName: Kristina
+    LastName: Cheraghi
+    Company: Mendelweg
+    Street: '102'
+    Zip: '40591'
+    City: Düsseldorf
+    CountryISO2: DE
+  expected_issues: []
+  expected_fix: {}
+  system_suggestion:
+    HouseNumber: '102'
+    Street: ''
+  user_edit:
+    Company: '-'
+    Street: Mendelweg
+    HouseNumber: '182'
+- description: 'Auto: Order #304-5210899-6361948 (BG)'
+  timestamp: '2026-03-17T05:59:41Z'
+  outcome: manually_edited
+  addr:
+    FirstName: Victor
+    LastName: Atanasov
+    Company: Boulevard Tsarigradsko Shose 86, 1784 Sofia
+    Street: '86'
+    Zip: '1784'
+    City: Sofia
+    CountryISO2: BG
+  expected_issues: []
+  expected_fix: {}
+  system_suggestion:
+    HouseNumber: '86'
+    Street: ''
+    City: Златица
+  user_edit:
+    Company: '-'
+    Street: Boulevard Tsarigradsko Shose
+    HouseNumber: '86'
+- description: 'Auto: Order #4003909336 (AT)'
+  timestamp: '2026-03-18T06:03:19Z'
+  outcome: manually_edited
+  addr:
+    FirstName: Julia
+    LastName: Kitzler
+    Street: Schmiedgasse 37d
+    HouseNumber: /4
+    Zip: '2020'
+    City: Hollabrunn
+    CountryISO2: AT
+  expected_issues: []
+  expected_fix: {}
+  system_suggestion:
+    Street: Schmiedgasse
+  user_edit:
+    Street: Schmiedgasse
+    HouseNumber: 37d
+    AddressAddition: /4
+- description: 'Auto: Order #306-6233920-6029104 (DE)'
+  timestamp: '2026-03-18T06:04:47Z'
+  outcome: manually_edited
+  addr:
+    FirstName: Barbara
+    LastName: Scrbec
+    Company: Martin Luther Strasse 114 10825
+    Street: Martin Luther Strasse 114
+    HouseNumber: '10825'
+    Zip: '10825'
+    City: Berlin
+    CountryISO2: DE
+  expected_issues: []
+  expected_fix: {}
+  system_suggestion:
+    Street: Martin-Luther-Straße
+  user_edit:
+    Company: Martin-Luther-Straße
+    Street: Martin-Luther-Straße
+    HouseNumber: '114'

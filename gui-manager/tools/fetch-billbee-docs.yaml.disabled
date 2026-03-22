@@ -1,0 +1,21 @@
+id: fetch-billbee-docs
+name: fetchBillbeeDocs
+path: ../fetchBillbeeDocs
+description: Automated morning fetch of invoices and delivery notes from Billbee or Google Drive
+venv: .venv
+functions:
+  - name: "Run Morning Fetch"
+    command: ".venv/bin/python execution/fetch_morning_documents.py"
+    description: "Fetch today's invoices and delivery notes"
+  - name: "Dry Run (preview only)"
+    command: ".venv/bin/python execution/fetch_morning_documents.py --dry-run"
+    description: "Preview what would be fetched without downloading"
+  - name: "Fetch Last 7 Days"
+    command: ".venv/bin/python execution/fetch_morning_documents.py --days 7"
+    description: "Re-fetch documents from the last 7 days"
+file_tree:
+  - execution/
+  - config/
+  - directives/
+permissions_required:
+  - billbee

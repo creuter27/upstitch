@@ -1,0 +1,42 @@
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv*/
+venv/
+
+# ─── Node / Frontend ──────────────────────────────────────────────────────────
+node_modules/
+dist/
+.vite-cache/
+
+# ─── Secrets & credentials ────────────────────────────────────────────────────
+.env
+credentials.json
+token.json
+
+# ─── Databases ────────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+
+# ─── Generated runtime data ───────────────────────────────────────────────────
+# Keep config files (package_type_mapping.json, package_types.yaml etc.)
+# but exclude runtime-written state and large generated outputs.
+**/data/feedback.jsonl
+**/data/last_run.json
+**/labels/
+**/logs/
+**/backups/
+.tmp/
+
+# ─── Generated output files ───────────────────────────────────────────────────
+*.xlsx
+*.pdf
+
+# ─── Claude Code local settings (personal permissions, not for version control)
+.claude/
+
+# ─── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

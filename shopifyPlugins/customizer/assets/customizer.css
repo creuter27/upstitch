@@ -1,0 +1,265 @@
+/* =============================================================================
+   Shopify Customizer Plugin — Storefront Styles
+   ============================================================================= */
+
+/* ── Wrapper ─────────────────────────────────────────────────────────────── */
+
+.customizer-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  font-family: inherit;
+  color: inherit;
+}
+
+/* ── Preview canvas area ─────────────────────────────────────────────────── */
+
+.customizer-preview-area {
+  position: relative;
+  width: 100%;
+  background: #f5f5f5;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.customizer-canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+.customizer-loading,
+.customizer-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(245, 245, 245, 0.85);
+  font-size: 14px;
+  color: #888;
+}
+
+.customizer-error {
+  color: #c0392b;
+}
+
+/* ── Controls container ──────────────────────────────────────────────────── */
+
+.customizer-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── Individual control group ────────────────────────────────────────────── */
+
+.customizer-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.customizer-control-label {
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #333;
+}
+
+/* ── Text control ────────────────────────────────────────────────────────── */
+
+.customizer-text-control {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.customizer-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.customizer-text-input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 15px;
+  font-family: inherit;
+  transition: border-color 0.2s;
+  background: #fff;
+}
+
+.customizer-text-input:focus {
+  outline: none;
+  border-color: #333;
+}
+
+.customizer-char-counter {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #999;
+  white-space: nowrap;
+}
+
+/* ── Option rows (font + color) ──────────────────────────────────────────── */
+
+.customizer-option-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.customizer-option-label {
+  font-size: 13px;
+  color: #666;
+  min-width: 40px;
+}
+
+/* ── Font select ─────────────────────────────────────────────────────────── */
+
+.customizer-font-select {
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #fff;
+  cursor: pointer;
+  max-width: 220px;
+}
+
+.customizer-font-select:focus {
+  outline: none;
+  border-color: #333;
+}
+
+/* ── Color swatches ──────────────────────────────────────────────────────── */
+
+.customizer-color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.customizer-color-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.15s, border-color 0.15s;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
+.customizer-color-swatch:hover {
+  transform: scale(1.15);
+}
+
+.customizer-color-swatch.is-active {
+  border-color: #333;
+  transform: scale(1.15);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Image control ───────────────────────────────────────────────────────── */
+
+.customizer-image-control {
+  width: 100%;
+}
+
+.customizer-no-images {
+  font-size: 13px;
+  color: #999;
+  margin: 0;
+}
+
+.customizer-image-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.customizer-image-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+  width: 72px;
+}
+
+.customizer-image-option:hover {
+  border-color: #bbb;
+  transform: translateY(-2px);
+}
+
+.customizer-image-option.is-active {
+  border-color: #333;
+}
+
+.customizer-image-option img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  display: block;
+}
+
+.customizer-image-caption {
+  font-size: 10px;
+  color: #666;
+  text-align: center;
+  word-break: break-word;
+  line-height: 1.2;
+  max-width: 60px;
+}
+
+.customizer-image-none {
+  font-size: 18px;
+  color: #aaa;
+  width: 72px;
+  height: 72px;
+  justify-content: center;
+}
+
+.customizer-image-none.is-active {
+  color: #333;
+  border-color: #333;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .customizer-option-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .customizer-image-option {
+    width: 60px;
+  }
+
+  .customizer-image-option img {
+    width: 40px;
+    height: 40px;
+  }
+}

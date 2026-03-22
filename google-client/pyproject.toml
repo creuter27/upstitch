@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "google-client"
+version = "0.1.0"
+description = "Shared Google API client for Prenerds automation projects"
+requires-python = ">=3.11"
+dependencies = [
+    "python-dotenv",
+    "gspread",
+    "google-auth",
+    "google-auth-oauthlib",
+    "google-auth-httplib2",
+    "google-api-python-client",
+]
+
+[tool.setuptools]
+# Install both modules as top-level importable modules
+py-modules = ["google_sheets_client", "google_drive_downloader"]

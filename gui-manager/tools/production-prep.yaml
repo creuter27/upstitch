@@ -1,0 +1,26 @@
+id: production-prep
+name: Produktionsvorbereitung
+path: ../productionPrep
+description: Produktionsvorbereitung – Adressen korrigieren, Dokumente abrufen, Versandlabels erstellen
+panel_type: production-prep
+functions:
+  - name: "Alles starten"
+    command: "./run.sh"
+    description: "Führt alle drei Schritte nacheinander aus: Adressen & Verpackung korrigieren, Dokumente abrufen, Versandlabels erstellen."
+    is_launch: true
+    supports_dry_run: true
+  - name: "fixAddressesAndPackaging"
+    command: "./fixAddressesAndPackaging.sh"
+    description: "Korrigiert Lieferadressen und setzt Pakettyp-Tags in Billbee. Danach fetchDocuments ausführen, während Billbee die Versandprofile automatisch zuweist."
+    supports_dry_run: true
+  - name: "fetchDocuments"
+    command: "./fetchDocuments.sh"
+    description: "Lädt Rechnungen und Lieferscheine von Billbee / Google Drive. Läuft während Billbee im Hintergrund Versandprofile zuweist."
+    supports_dry_run: true
+  - name: "getLabels"
+    command: "./getLabels.sh"
+    description: "Erstellt Versandlabels für Bestellungen im after_fix-Status. Wartet auf Verpackungstyp-Tags und speichert Label-PDFs im labels/-Ordner."
+    supports_dry_run: true
+file_tree:
+  - config/
+  - data/

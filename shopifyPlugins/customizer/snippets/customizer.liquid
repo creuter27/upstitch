@@ -1,0 +1,76 @@
+{% comment %}
+  Customizer Personalization Snippet
+  ===================================
+  Usage: {% render 'customizer', product: product, variant: variant %}
+
+  Required Shopify metafields (create these in Settings → Custom data):
+    - shop.metafields.customizer.global_settings  (type: json)
+    - product.metafields.customizer.config         (type: json)
+    - variant.metafields.customizer.preview_image  (type: single_line_text_field)
+
+  See README.md for full metafield JSON schemas.
+{% endcomment %}
+
+{%- liquid
+  assign customizer_config   = product.metafields.customizer.config.value
+  assign global_settings     = shop.metafields.customizer.global_settings.value
+  assign preview_image       = variant.metafields.customizer.preview_image.value
+  if preview_image == blank
+    assign preview_image = product.metafields.customizer.preview_image.value
+  endif
+-%}
+
+{% if customizer_config != blank and customizer_config.enabled %}
+
+<div
+  class="customizer-wrapper"
+  id="customizer-wrapper"
+  data-config="{{ customizer_config | json | escape }}"
+  data-global="{{ global_settings | json | escape }}"
+  data-preview="{{ preview_image | escape }}"
+>
+
+  <div class="customizer-preview-area">
+    <canvas id="customizer-canvas" class="customizer-canvas"></canvas>
+    <div class="customizer-loading" id="customizer-loading">
+      <span>Loading preview…</span>
+    </div>
+    <div class="customizer-error" id="customizer-error" style="display:none;">
+      <span>Could not load product preview.</span>
+    </div>
+  </div>
+
+  <div class="customizer-controls" id="customizer-controls">
+    <!-- Populated dynamically by customizer.js -->
+  </div>
+
+  <%-- Hidden inputs injected into the ATC form on submit --%>
+  <div id="customizer-line-item-properties" style="display:none;"></div>
+
+</div>
+
+{{ 'customizer.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'customizer.js' | asset_url }}" defer></script>
+
+<script>
+  // Re-initialise when Shopify updates the variant (works with most themes)
+  document.addEventListener('DOMContentLoaded', function () {
+    document.addEventListener('variant:changed', function (e) {
+      var newPreview =
+        e.detail &&
+        e.detail.variant &&
+        e.detail.variant.metafields &&
+        e.detail.variant.metafields.customizer &&
+        e.detail.variant.metafields.customizer.preview_image;
+
+      if (newPreview) {
+        var wrapper = document.getElementById('customizer-wrapper');
+        if (wrapper && window.customizerInstance) {
+          window.customizerInstance.updatePreviewImage(newPreview);
+        }
+      }
+    });
+  });
+</script>
+
+{% endif %}

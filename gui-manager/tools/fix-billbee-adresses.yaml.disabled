@@ -1,0 +1,21 @@
+id: fix-billbee-adresses
+name: fixBillbeeAdresses
+path: ../fixBillbeeAdresses
+description: Detect and correct incorrectly entered delivery addresses in Billbee orders
+venv: .venv
+functions:
+  - name: "Run Address Fixer"
+    command: ".venv/bin/python main.py"
+    description: "Detect and interactively fix bad addresses"
+  - name: "Dry Run"
+    command: ".venv/bin/python main.py --dry-run"
+    description: "Preview detected issues without making changes"
+  - name: "Reprocess Since Date"
+    command: ".venv/bin/python main.py --since 2026-01-01"
+    description: "Reprocess all orders since a given date (edit command before running)"
+file_tree:
+  - execution/
+  - directives/
+  - data/
+permissions_required:
+  - billbee
