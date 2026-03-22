@@ -27,8 +27,15 @@ if [ ! -f "$MODULES/.bin/vite" ]; then
     echo "node_modules installed to: $MODULES"
 fi
 
-# Copy vite.config.ts next to node_modules so Vite can resolve tailwindcss /
-# autoprefixer from $EXTERNAL/node_modules without a symlink in the Tresorit folder.
+# Create a symlink $EXTERNAL/frontend-src -> $SCRIPT_DIR/frontend.
+# The symlink lives entirely outside Tresorit so it never gets synced.
+# Vite runs from $EXTERNAL with --preserve-symlinks: module resolution
+# walks $EXTERNAL/frontend-src/src/ -> $EXTERNAL/frontend-src/ -> $EXTERNAL/
+# and finds $EXTERNAL/node_modules naturally — same approach as Windows.
+rm -f "$EXTERNAL/frontend-src"
+ln -s "$SCRIPT_DIR/frontend" "$EXTERNAL/frontend-src"
+
+# Copy vite config next to node_modules so its imports resolve from there.
 cp "$SCRIPT_DIR/frontend/vite.config.ts" "$EXTERNAL/"
 
 echo "Starting gui-manager backend..."
@@ -37,13 +44,11 @@ cd "$SCRIPT_DIR/backend"
 BACKEND_PID=$!
 
 echo "Starting gui-manager frontend..."
-# Run Vite from $EXTERNAL (where node_modules lives) so no symlink is needed
-# inside the Tresorit folder. VITE_FRONTEND_SRC points Tailwind content globs
-# and the dev server root at the actual source files.
-export VITE_FRONTEND_SRC="$SCRIPT_DIR/frontend"
+export NODE_OPTIONS="--preserve-symlinks"
+export VITE_FRONTEND_SRC="./frontend-src"
 export VITE_CACHE_DIR="$EXTERNAL/.vite-cache"
-"$MODULES/.bin/vite" \
-    --root "$SCRIPT_DIR/frontend" \
+cd "$EXTERNAL"
+"$MODULES/.bin/vite" "$EXTERNAL/frontend-src" \
     --config "$EXTERNAL/vite.config.ts" &
 FRONTEND_PID=$!
 
