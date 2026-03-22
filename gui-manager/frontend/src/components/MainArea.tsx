@@ -3,6 +3,7 @@ import ToolPanel from './ToolPanel'
 import FileEditor from './FileEditor'
 import BrowserTab from './BrowserTab'
 import SettingsPage from './SettingsPage'
+import ReorderPanel from './ReorderPanel'
 
 const TYPE_ICON: Record<string, string> = {
   tool: '🔧',
@@ -80,6 +81,8 @@ export default function MainArea() {
           />
         ) : activeTab.type === 'browser' && activeTab.url ? (
           <BrowserTab url={activeTab.url} />
+        ) : activeTab.type === 'reorder' && activeTab.toolId ? (
+          <ReorderPanel toolId={activeTab.toolId} />
         ) : activeTab.type === 'settings' ? (
           <SettingsPage />
         ) : null}

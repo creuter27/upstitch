@@ -1,5 +1,8 @@
 id: billbee-artikelmanager
 name: Artikel
+sidebar_order: 3
+reorder: true
+reorder_order: 1
 path: ../Billbee-Artikelmanager
 description: Product catalog management pipeline - download, enrich, validate, upload
 start_url: https://docs.google.com/spreadsheets/d/1m5S-9WLll63JQ8rKU6e_ANOxDvLzHE8W4K1SIzSdMyg

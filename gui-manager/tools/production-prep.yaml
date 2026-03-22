@@ -1,10 +1,11 @@
 id: production-prep
 name: Produktionsvorbereitung
+sidebar_order: 2
 path: ../productionPrep
 description: Produktionsvorbereitung – Adressen korrigieren, Dokumente abrufen, Versandlabels erstellen
 panel_type: production-prep
 functions:
-  - name: "Alles starten"
+  - name: "Start"
     command: "./run.sh"
     description: "Führt alle drei Schritte nacheinander aus: Adressen & Verpackung korrigieren, Dokumente abrufen, Versandlabels erstellen."
     is_launch: true

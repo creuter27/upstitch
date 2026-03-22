@@ -62,6 +62,17 @@ export async function getTool(id: string): Promise<Tool> {
   return res.json()
 }
 
+export async function getManufacturers(toolId: string): Promise<Manufacturer[]> {
+  const res = await apiFetch(`/tools/${toolId}/manufacturers`)
+  return res.json()
+}
+
+export async function getSheetExists(toolId: string, code: string): Promise<boolean> {
+  const res = await apiFetch(`/tools/${toolId}/manufacturers/${code}/sheet-exists`)
+  const data = await res.json()
+  return data.exists
+}
+
 export async function getToolFileTree(id: string): Promise<FileTreeNode[]> {
   const res = await apiFetch(`/tools/${id}/filetree`)
   return res.json()
@@ -117,9 +128,20 @@ export interface Tool {
   description: string
   start_url?: string
   venv?: string
+  reorder?: boolean
+  sidebar_order?: number
+  reorder_order?: number
   functions?: ToolFunction[]
   file_tree?: string[]
   permissions_required?: string[]
+}
+
+export interface Manufacturer {
+  code: string
+  name: string
+  reorderingURL: string
+  useNoCrawl: boolean
+  pythonCmd: string
 }
 
 export interface FileTreeNode {

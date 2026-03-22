@@ -85,53 +85,37 @@ export default function ToolPanel({ toolId }: Props) {
 
   return (
     <div className="h-full overflow-y-auto p-6" style={{ background: '#1e1e1e' }}>
-      {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-semibold text-vscode-text mb-1">{tool.name}</h1>
-            <p className="text-vscode-muted text-sm">{tool.description}</p>
-          </div>
-          {tool.start_url && (
-            <button
-              onClick={openBrowserTab}
-              className="shrink-0 px-3 py-1.5 rounded text-sm font-medium transition-colors"
-              style={{ background: '#007acc', color: '#fff' }}
-            >
-              🌐 Open in Tab
-            </button>
-          )}
-        </div>
-      </div>
+      {/* Header row: title + controls */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <h1 className="text-base font-semibold text-vscode-text shrink-0">{tool.name}</h1>
 
-      {/* Divider */}
-      <div style={{ height: '1px', background: '#3e3e3e', marginBottom: '20px' }} />
+        {tool.start_url && (
+          <button
+            onClick={openBrowserTab}
+            className="shrink-0 px-2 py-1 rounded text-xs font-medium transition-colors"
+            style={{ background: '#007acc', color: '#fff' }}
+          >
+            🌐 Open in Tab
+          </button>
+        )}
 
-      {/* Controls row: dry run toggle + interrupt */}
-      <div className="flex items-center justify-between mb-5">
-        <label className="flex items-center gap-2 cursor-pointer select-none" onClick={() => setDryRun(!dryRun)}>
+        <label className="flex items-center gap-1.5 cursor-pointer select-none ml-auto" onClick={() => setDryRun(!dryRun)}>
           <div
-            className="relative inline-block w-10 h-5 rounded-full transition-colors"
+            className="relative inline-block w-8 h-4 rounded-full transition-colors"
             style={{ background: dryRun ? '#2472c8' : '#3e3e3e' }}
           >
             <div
-              className="absolute top-0.5 w-4 h-4 rounded-full transition-transform"
-              style={{
-                background: '#fff',
-                left: '2px',
-                transform: dryRun ? 'translateX(20px)' : 'translateX(0)',
-              }}
+              className="absolute top-0.5 w-3 h-3 rounded-full transition-transform"
+              style={{ background: '#fff', left: '2px', transform: dryRun ? 'translateX(16px)' : 'translateX(0)' }}
             />
           </div>
-          <span className="text-sm font-medium" style={{ color: dryRun ? '#3b8eea' : '#858585' }}>
-            dry_run
-          </span>
+          <span className="text-xs" style={{ color: dryRun ? '#3b8eea' : '#858585' }}>dry_run</span>
         </label>
 
         {isRunning && (
           <button
             onClick={interrupt}
-            className="px-3 py-1.5 rounded text-sm font-semibold"
+            className="px-2 py-1 rounded text-xs font-semibold"
             style={{ background: '#7f1d1d', color: '#fca5a5', border: '1px solid #991b1b' }}
           >
             ⬛ Interrupt
@@ -139,12 +123,19 @@ export default function ToolPanel({ toolId }: Props) {
         )}
       </div>
 
+      {tool.description && (
+        <p className="text-vscode-muted text-xs mb-4">{tool.description}</p>
+      )}
+
+      {/* Divider */}
+      <div style={{ height: '1px', background: '#3e3e3e', marginBottom: '16px' }} />
+
       {/* Launch button */}
       {launchFn && (
         <div className="mb-6">
           <button
             onClick={() => runFunction(launchFn)}
-            className="w-full py-5 rounded-lg font-bold text-lg transition-colors"
+            className="w-full py-4 px-5 rounded-lg font-bold text-lg transition-colors text-left"
             style={{
               background: confirming === launchFn.name
                 ? (dryRun && launchFn.supports_dry_run ? '#1a3050' : '#14532d')
@@ -156,26 +147,28 @@ export default function ToolPanel({ toolId }: Props) {
             }}
           >
             {confirming === launchFn.name ? (
-              '⚠ Nochmal klicken zum Starten'
+              <div className="text-center">⚠ Nochmal klicken zum Starten</div>
             ) : (
               <>
-                ▶ {launchFn.name}
-                {dryRun && launchFn.supports_dry_run && (
-                  <span
-                    className="ml-3 text-sm font-normal px-2 py-0.5 rounded"
-                    style={{ background: '#1e3a5f', color: '#93c5fd' }}
-                  >
-                    dry_run
-                  </span>
+                <div className="flex items-center gap-3 mb-1">
+                  <span>▶ {launchFn.name}</span>
+                  {dryRun && launchFn.supports_dry_run && (
+                    <span
+                      className="text-sm font-normal px-2 py-0.5 rounded"
+                      style={{ background: '#1e3a5f', color: '#93c5fd' }}
+                    >
+                      dry_run
+                    </span>
+                  )}
+                </div>
+                {launchFn.description && (
+                  <div className="text-xs font-normal" style={{ color: 'inherit', opacity: 0.65 }}>
+                    {launchFn.description}
+                  </div>
                 )}
               </>
             )}
           </button>
-          {launchFn.description && (
-            <p className="mt-2 text-xs text-center" style={{ color: '#6b7280' }}>
-              {launchFn.description}
-            </p>
-          )}
         </div>
       )}
 

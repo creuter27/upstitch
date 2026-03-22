@@ -98,6 +98,10 @@ export default function Sidebar() {
     openTab({ id: `tool-${toolId}`, type: 'tool', title: toolName, toolId })
   }
 
+  function openReorderTab(toolId: string) {
+    openTab({ id: `reorder-${toolId}`, type: 'reorder', title: 'Bestellung', toolId })
+  }
+
   function openFile(node: FileTreeNode) {
     openTab({
       id: `file-${node.path}`,
@@ -129,62 +133,97 @@ export default function Sidebar() {
         </button>
       </div>
 
-      {/* Tool list */}
+      {/* Tool list — flat sorted entries */}
       <div className="flex-1 overflow-y-auto py-1">
         {tools.length === 0 && (
           <div className="px-4 py-3 text-vscode-muted text-xs">No tools loaded</div>
         )}
-        {tools.map((tool) => {
-          const isToolActive = activeTab?.type === 'tool' && activeTab.toolId === tool.id
-          const isExpanded = expandedTools[tool.id]
+        {(() => {
+          // Reorder (🛒) entries always appear before tool (🔧) entries.
+          // Within each group, sort by sidebar_order.
+          type Entry =
+            | { kind: 'tool'; tool: typeof tools[0] }
+            | { kind: 'reorder'; tool: typeof tools[0] }
+          const reorderEntries: Entry[] = []
+          const toolEntries: Entry[] = []
+          for (const tool of tools) {
+            toolEntries.push({ kind: 'tool', tool })
+            if (tool.reorder) {
+              reorderEntries.push({ kind: 'reorder', tool })
+            }
+          }
+          const byOrder = (a: Entry, b: Entry) =>
+            (a.tool.sidebar_order ?? 99) - (b.tool.sidebar_order ?? 99)
+          reorderEntries.sort(byOrder)
+          toolEntries.sort(byOrder)
+          const entries: Entry[] = [...reorderEntries, ...toolEntries]
 
-          return (
-            <div key={tool.id}>
-              {/* Tool row */}
-              <div
-                className="flex items-center hover:bg-vscode-hover"
-                style={{
-                  background: isToolActive ? '#37373d' : 'transparent',
-                }}
-              >
-                {/* Expand toggle */}
-                <button
-                  onClick={() => toggleTool(tool.id)}
-                  className="p-1 text-vscode-muted hover:text-vscode-text text-xs w-6 shrink-0"
-                  style={{ paddingLeft: '6px' }}
+          return entries.map((entry) => {
+            if (entry.kind === 'reorder') {
+              const { tool } = entry
+              const isActive = activeTab?.id === `reorder-${tool.id}`
+              return (
+                <div
+                  key={`reorder-${tool.id}`}
+                  className="flex items-center hover:bg-vscode-hover"
+                  style={{ background: isActive ? '#37373d' : 'transparent' }}
                 >
-                  {isExpanded ? '▼' : '▶'}
-                </button>
-                {/* Tool name — opens panel */}
-                <button
-                  onClick={() => openToolPanel(tool.id, tool.name)}
-                  className="flex-1 text-left py-1 pr-2 text-sm text-vscode-text truncate"
-                  style={{ color: isToolActive ? '#fff' : '#d4d4d4' }}
-                >
-                  🔧 {tool.name}
-                </button>
-              </div>
-
-              {/* File tree */}
-              {isExpanded && (
-                <div>
-                  {loadingTree[tool.id] ? (
-                    <div className="text-vscode-muted text-xs px-8 py-1">Loading...</div>
-                  ) : fileTrees[tool.id] ? (
-                    <FileTreeView
-                      nodes={fileTrees[tool.id]}
-                      depth={1}
-                      onFileClick={openFile}
-                      activePath={activePath}
-                    />
-                  ) : (
-                    <div className="text-vscode-muted text-xs px-8 py-1">No files</div>
-                  )}
+                  <div className="w-6 shrink-0" />
+                  <button
+                    onClick={() => openReorderTab(tool.id)}
+                    className="flex-1 text-left py-1 pr-2 text-sm truncate"
+                    style={{ color: isActive ? '#fff' : '#d4d4d4' }}
+                  >
+                    🛒 Bestellung
+                  </button>
                 </div>
-              )}
-            </div>
-          )
-        })}
+              )
+            }
+
+            const { tool } = entry
+            const isToolActive = activeTab?.type === 'tool' && activeTab.toolId === tool.id
+            const isExpanded = expandedTools[tool.id]
+            return (
+              <div key={`tool-${tool.id}`}>
+                <div
+                  className="flex items-center hover:bg-vscode-hover"
+                  style={{ background: isToolActive ? '#37373d' : 'transparent' }}
+                >
+                  <button
+                    onClick={() => toggleTool(tool.id)}
+                    className="p-1 text-vscode-muted hover:text-vscode-text text-xs w-6 shrink-0"
+                    style={{ paddingLeft: '6px' }}
+                  >
+                    {isExpanded ? '▼' : '▶'}
+                  </button>
+                  <button
+                    onClick={() => openToolPanel(tool.id, tool.name)}
+                    className="flex-1 text-left py-1 pr-2 text-sm text-vscode-text truncate"
+                    style={{ color: isToolActive ? '#fff' : '#d4d4d4' }}
+                  >
+                    🔧 {tool.name}
+                  </button>
+                </div>
+                {isExpanded && (
+                  <div>
+                    {loadingTree[tool.id] ? (
+                      <div className="text-vscode-muted text-xs px-8 py-1">Loading...</div>
+                    ) : fileTrees[tool.id] ? (
+                      <FileTreeView
+                        nodes={fileTrees[tool.id]}
+                        depth={1}
+                        onFileClick={openFile}
+                        activePath={activePath}
+                      />
+                    ) : (
+                      <div className="text-vscode-muted text-xs px-8 py-1">No files</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })
+        })()}
       </div>
 
       {/* Footer */}

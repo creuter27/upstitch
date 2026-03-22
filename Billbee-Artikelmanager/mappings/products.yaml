@@ -13,9 +13,13 @@ manufacturers:
     tokens:
     - Trixie Baby
     - trixie
+    reorderingURL: https://b2b.trixie-baby.com/products-1
+    useNoCrawl: true
   FRE:
     tokens:
     - Fresk
+    reorderingURL: https://www.b2bkukcompany.com
+    useNoCrawl: false
   UPS:
     tokens:
     - Upstitch Studio
