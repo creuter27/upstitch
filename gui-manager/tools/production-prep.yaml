@@ -22,6 +22,10 @@ functions:
     command: "./getLabels.sh"
     description: "Erstellt Versandlabels für Bestellungen im after_fix-Status. Wartet auf Verpackungstyp-Tags und speichert Label-PDFs im labels/-Ordner."
     supports_dry_run: true
+panels:
+  - id: packaging
+    name: Verpackung
+    panel_type: packaging
 file_tree:
   - config/
   - data/

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useStore } from '../store'
-import { getToolFileTree, FileTreeNode } from '../api'
+import { getToolFileTree, FileTreeNode, ToolPanel } from '../api'
 
 interface FileTreeProps {
   nodes: FileTreeNode[]
@@ -100,6 +100,16 @@ export default function Sidebar() {
 
   function openReorderTab(toolId: string) {
     openTab({ id: `reorder-${toolId}`, type: 'reorder', title: 'Bestellung', toolId })
+  }
+
+  function openPanelTab(toolId: string, panel: ToolPanel) {
+    openTab({
+      id: `panel-${toolId}-${panel.id}`,
+      type: panel.panel_type as 'packaging',
+      title: panel.name,
+      toolId,
+      panelId: panel.id,
+    })
   }
 
   function openFile(node: FileTreeNode) {
@@ -206,6 +216,26 @@ export default function Sidebar() {
                 </div>
                 {isExpanded && (
                   <div>
+                    {/* Panel subnodes */}
+                    {tool.panels?.map((panel) => {
+                      const tabId = `panel-${tool.id}-${panel.id}`
+                      const isPanelActive = activeTab?.id === tabId
+                      return (
+                        <button
+                          key={panel.id}
+                          onClick={() => openPanelTab(tool.id, panel)}
+                          className="w-full text-left py-1 hover:bg-vscode-hover text-xs"
+                          style={{
+                            paddingLeft: '20px',
+                            background: isPanelActive ? '#264f78' : 'transparent',
+                            color: isPanelActive ? '#fff' : '#d4d4d4',
+                          }}
+                        >
+                          📦 {panel.name}
+                        </button>
+                      )
+                    })}
+                    {/* File tree */}
                     {loadingTree[tool.id] ? (
                       <div className="text-vscode-muted text-xs px-8 py-1">Loading...</div>
                     ) : fileTrees[tool.id] ? (

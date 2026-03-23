@@ -37,3 +37,8 @@ class SettingUpdate(BaseModel):
 class FileContent(BaseModel):
     path: str
     content: str
+
+
+class PackagingUpdate(BaseModel):
+    comboKey: str
+    name: str

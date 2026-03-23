@@ -69,7 +69,7 @@ cases:
 
   # ── Street field contains only a house number ────────────────────────────────
   - description: "Street is only a house number, company may hold street name"
-    notes: "Real case: Judith Becker, DE, Street=36 Company=Knippchen"
+    notes: "Real case: Judith Becker, DE, Street=36 Company=Knippchen. Company is treated as street name."
     addr:
       Street: "36"
       HouseNumber: ""
@@ -80,8 +80,9 @@ cases:
     expected_issues:
       - STREET_IS_HOUSE_NUMBER
     expected_fix:
+      Street: "Knippchen"
       HouseNumber: "36"
-      Street: ""
+      Company: ""
 
   - description: "Street is only a house number, no company"
     addr:
@@ -176,6 +177,149 @@ cases:
       Zip: "03012"
       City: "Anagni"
       CountryISO2: "IT"
+    expected_issues: []
+    expected_fix: {}
+
+  # ── STREET_IS_HOUSE_NUMBER + Company has street name ────────────────────────
+  - description: "Company has street name, street field has only house number (no number in Company)"
+    notes: "Real case: Victoria Serova, DE #304-6488156-3898760. Company=street name, Street=house number only."
+    addr:
+      FirstName: Victoria
+      LastName: Serova
+      Company: "Unterlindhofstr"
+      Street: "16"
+      HouseNumber: ""
+      Zip: "93173"
+      City: "Wenzenbach"
+      CountryISO2: "DE"
+    expected_issues:
+      - STREET_IS_HOUSE_NUMBER
+    expected_fix:
+      Company: ""
+      Street: "Unterlindhofstr"
+      HouseNumber: "16"
+
+  - description: "Company has street name, street field has only house number (Mendelweg)"
+    notes: "Real case: Kristina Cheraghi, DE #302-7578467-3394703."
+    addr:
+      FirstName: Kristina
+      LastName: Cheraghi
+      Company: "Mendelweg"
+      Street: "102"
+      HouseNumber: ""
+      Zip: "40591"
+      City: "Düsseldorf"
+      CountryISO2: "DE"
+    expected_issues:
+      - STREET_IS_HOUSE_NUMBER
+    expected_fix:
+      Company: ""
+      Street: "Mendelweg"
+      HouseNumber: "102"
+
+  - description: "Company has full street address with house number, street field has only house number (BG)"
+    notes: "Real case: Victor Atanasov, BG #304-5210899-6361948. Company contains full address."
+    addr:
+      FirstName: Victor
+      LastName: Atanasov
+      Company: "Boulevard Tsarigradsko Shose 86, 1784 Sofia"
+      Street: "86"
+      HouseNumber: ""
+      Zip: "1784"
+      City: "Sofia"
+      CountryISO2: "BG"
+    expected_issues:
+      - STREET_IS_HOUSE_NUMBER
+    expected_fix:
+      Company: ""
+      Street: "Boulevard Tsarigradsko Shose"
+      HouseNumber: "86"
+
+  # ── HOUSE_NUMBER_IN_STREET with existing HouseNumber starting with "/" ───────
+  - description: "AT: Street contains house number + floor suffix, HouseNumber is staircase code /4"
+    notes: "Real case: Julia Kitzler, AT #4003909336. HouseNumber='/4' is apt/staircase, real hn is in Street."
+    addr:
+      FirstName: Julia
+      LastName: Kitzler
+      Street: "Schmiedgasse 37d"
+      HouseNumber: "/4"
+      Zip: "2020"
+      City: "Hollabrunn"
+      CountryISO2: "AT"
+    expected_issues:
+      - HOUSE_NUMBER_IN_STREET
+    expected_fix:
+      Street: "Schmiedgasse"
+      HouseNumber: "37d"
+      AddressAddition: "/4"
+
+  # ── HOUSE_NUMBER_EQUALS_ZIP ──────────────────────────────────────────────────
+  - description: "DE: HouseNumber equals ZIP code — real house number is in Street field"
+    notes: "Real case: Barbara Scrbec, DE #306-6233920-6029104. HouseNumber='10825'==Zip='10825'."
+    addr:
+      FirstName: Barbara
+      LastName: Scrbec
+      Company: "Martin Luther Strasse 114 10825"
+      Street: "Martin Luther Strasse 114"
+      HouseNumber: "10825"
+      Zip: "10825"
+      City: "Berlin"
+      CountryISO2: "DE"
+    expected_issues:
+      - HOUSE_NUMBER_EQUALS_ZIP
+    expected_fix:
+      Street: "Martin Luther Strasse"
+      HouseNumber: "114"
+
+  # ── STREET_IS_SINGLE_LETTER_COMPANY_HAS_ADDRESS ──────────────────────────────
+  - description: "CH: Street is single letter 'A', Company contains real street address"
+    notes: "Real case: Arijeet Roychoudhury, CH #028-5384544-6961944. Real address is in Company field."
+    addr:
+      FirstName: Arijeet
+      LastName: Roychoudhury
+      Company: "Geerenstrasse 24"
+      Street: "A"
+      HouseNumber: "1-0203"
+      Zip: "8302"
+      City: "Kloten"
+      CountryISO2: "CH"
+    expected_issues:
+      - STREET_IS_SINGLE_LETTER_COMPANY_HAS_ADDRESS
+    expected_fix:
+      Company: ""
+      Street: "Geerenstrasse"
+      HouseNumber: "24"
+      AddressAddition: "A 1-0203"
+
+  # ── House number in AddressAddition (with suburb in city name) ───────────────
+  - description: "DE: House number in AddressAddition, city name contains suburb (Auetal-Rehren)"
+    notes: "Real case: Nancy Greiffenreich-Sieb, DE #4010995439. AddressAddition='12' is house number."
+    addr:
+      FirstName: Nancy
+      LastName: Greiffenreich-Sieb
+      Street: "Danziger Str."
+      AddressAddition: "12"
+      HouseNumber: ""
+      Zip: "31749"
+      City: "Auetal-Rehren"
+      CountryISO2: "DE"
+    expected_issues:
+      - HOUSE_NUMBER_IN_ADDITION
+    expected_fix:
+      HouseNumber: "12"
+      AddressAddition: ""
+
+  # ── Complex AT slash notation — no deterministic fix ────────────────────────
+  - description: "AT: Street contains complex slash notation, no deterministic fix possible"
+    notes: "Real case: Zehra Aksu, AT #302-0875844-4257965. Street='Ketzergasse 98/1/' with HouseNumber='3'."
+    addr:
+      FirstName: Frau
+      LastName: Zehra Aksu
+      Street: "Ketzergasse 98/1/"
+      HouseNumber: "3"
+      Zip: "1230"
+      City: "Wien"
+      CountryISO2: "AT"
     expected_issues: []
     expected_fix: {}
 

@@ -20,6 +20,7 @@ Usage:
 """
 
 import argparse
+import readline
 import re
 import sys
 from datetime import datetime, timezone
@@ -493,13 +494,34 @@ def _prompt_choice(default: str = "s") -> str:
     return raw.lower()
 
 
+def _input_with_prefill(prompt: str, prefill: str) -> str:
+    """Show a prompt with the current value pre-filled so the user can edit it in-place.
+
+    Uses readline pre-input hook so Ctrl-C/Ctrl-V copy-paste work normally.
+    Enter with no change keeps the prefilled value; entering '-' clears the field.
+    """
+    def _hook():
+        readline.insert_text(prefill)
+        readline.redisplay()
+    readline.set_pre_input_hook(_hook)
+    try:
+        result = input(prompt)
+    finally:
+        readline.set_pre_input_hook(None)
+    # A lone "-" means "clear this field"
+    if result == "-":
+        return ""
+    return result
+
+
 def _prompt_edit(original: dict) -> dict:
     """Let user manually edit address fields. Returns dict of changed fields."""
-    console.print("\n  [yellow]Edit address fields (press Enter to keep current value):[/]")
+    console.print("\n  [yellow]Edit address fields (Enter = keep, '-' = clear):[/]")
     edits = {}
     for field_key, field_label in DISPLAY_FIELDS:
         current = original.get(field_key) or ""
-        new_val = Prompt.ask(f"  {field_label}", default=current)
+        label_plain = re.sub(r"\[.*?\]", "", field_label).strip()
+        new_val = _input_with_prefill(f"  {label_plain}: ", current)
         if new_val != current:
             edits[field_key] = new_val
     return edits
@@ -616,10 +638,12 @@ def _apply_with_verification(
         console.print("  [dim]No changes made.[/]")
         return "skipped"
 
+    geo_final = geo  # will be replaced by re-verification result if geocode is called
     if not from_geocode and not skip_geocode:
         new_addr = {**addr, **fix}
         console.print("\n  [dim]Re-verifying fixed address with OpenCage...[/]")
         geo_v = geocode(new_addr)
+        geo_final = geo_v  # store result for the fixed address, not the original
         _display_address_table(addr, new_addr)
         _display_geocode(geo_v)
         if geo_v and geo_v.get("confidence", 0) < 6:
@@ -641,7 +665,7 @@ def _apply_with_verification(
             if extra_edits:
                 fix = {**fix, **extra_edits}
 
-    _queue_address_fix(order_id, order_number, fix, geo=geo, orig_addr=addr)
+    _queue_address_fix(order_id, order_number, fix, geo=geo_final, orig_addr=addr)
     console.print("  [dim]Queued.[/]")
     feedback_store.append({
         "order_id": order_id, "order_number": order_number,
@@ -738,6 +762,11 @@ def _geocode_suggestion(addr: dict, geo: dict | None,
     return fix
 
 
+_BUSINESS_INDICATORS = frozenset([
+    "gmbh", "ag", "kg", "e.v.", "ug", "ltd", "inc", "bv", "nv", "sarl", "s.a.", "s.r.l.",
+])
+
+
 def _deterministic_suggestion(addr: dict, issues: list) -> dict:
     """
     Build a fix dict for issues that can be resolved without calling Claude.
@@ -747,17 +776,35 @@ def _deterministic_suggestion(addr: dict, issues: list) -> dict:
 
     if "HOUSE_NUMBER_IN_STREET" in issue_codes:
         street = (addr.get("Street") or "").strip()
+        existing_hn = (addr.get("HouseNumber") or "").strip()
         parsed = parse_street_housenumber_floor(street)
         if parsed:
             clean_street, hn, floor = parsed
             fix["Street"] = clean_street
             fix["HouseNumber"] = hn
-            if floor and not (addr.get("AddressAddition") or "").strip():
+            if existing_hn.startswith("/"):
+                # Existing HouseNumber is a staircase/apt code — move to AddressAddition
+                if not (addr.get("AddressAddition") or "").strip():
+                    fix["AddressAddition"] = existing_hn
+            elif floor and not (addr.get("AddressAddition") or "").strip():
                 fix["AddressAddition"] = floor
 
     if "STREET_IS_HOUSE_NUMBER" in issue_codes and "HouseNumber" not in fix:
         street = (addr.get("Street") or "").strip()
-        if street:
+        company = (addr.get("Company") or "").strip()
+        if company and not any(w in company.lower() for w in _BUSINESS_INDICATORS):
+            parsed = parse_street_housenumber_floor(company)
+            if parsed and parsed[0].strip():
+                # Company contains "StreetName HouseNumber" — use parsed values
+                fix["Street"] = parsed[0]
+                fix["HouseNumber"] = parsed[1]
+                fix["Company"] = ""
+            else:
+                # Company is just a street name with no number embedded
+                fix["Street"] = company
+                fix["HouseNumber"] = street
+                fix["Company"] = ""
+        elif street:
             fix["HouseNumber"] = street
             fix["Street"] = ""
 
@@ -779,6 +826,30 @@ def _deterministic_suggestion(addr: dict, issues: list) -> dict:
         stripped = strip_zip_prefix(addr.get("Zip") or "")
         if stripped:
             fix["Zip"] = stripped
+
+    if "HOUSE_NUMBER_EQUALS_ZIP" in issue_codes and "HouseNumber" not in fix:
+        street = (addr.get("Street") or "").strip()
+        parsed = parse_street_housenumber_floor(street)
+        if parsed and parsed[0].strip():
+            fix["Street"] = parsed[0]
+            fix["HouseNumber"] = parsed[1]
+            if parsed[2] and not (addr.get("AddressAddition") or "").strip():
+                fix["AddressAddition"] = parsed[2]
+
+    if "STREET_IS_SINGLE_LETTER_COMPANY_HAS_ADDRESS" in issue_codes and "HouseNumber" not in fix:
+        street = (addr.get("Street") or "").strip()
+        company = (addr.get("Company") or "").strip()
+        existing_hn = (addr.get("HouseNumber") or "").strip()
+        parsed = parse_street_housenumber_floor(company)
+        if parsed and parsed[0].strip():
+            fix["Street"] = parsed[0]
+            fix["HouseNumber"] = parsed[1]
+            fix["Company"] = ""
+            # Combine original Street letter + HouseNumber as AddressAddition
+            parts = [p for p in [street, existing_hn] if p]
+            combined = " ".join(parts)
+            if combined and not (addr.get("AddressAddition") or "").strip():
+                fix["AddressAddition"] = combined
 
     return fix
 
@@ -825,7 +896,7 @@ def process_order(
         _orig_street = (addr.get("Street") or "").strip()
         import re as _re_proc
         _street_is_useless = not _orig_street or bool(
-            _re_proc.match(r"^\d+[-–]?\d*[a-zA-Z]?\s*$", _orig_street)
+            _re_proc.match(r"^(\d+[-–]?\d*[a-zA-Z]?|[A-Za-z])\s*$", _orig_street)
         )
         if _company and _street_is_useless:
             _alt_addr = {**addr, "Street": _company,

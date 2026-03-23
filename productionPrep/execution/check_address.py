@@ -91,8 +91,10 @@ def check(addr: dict) -> list[Issue]:
     city = (addr.get("City") or "").strip()
     country = (addr.get("CountryISO2") or "DE").strip().upper()
 
-    # 1. House number (and optional floor text) embedded in street name
-    if street and not house_number:
+    # 1. House number (and optional floor text) embedded in street name.
+    # Also fires when an existing house_number starts with "/" (Austrian staircase code like "/4"),
+    # because in that case the real house number is still embedded in the street field.
+    if street and (not house_number or house_number.startswith("/")):
         m = _STREET_HOUSENUMBER_RE.match(street)
         if m and m.group(1).strip():
             clean_street = m.group(1).strip()
@@ -227,6 +229,43 @@ def check(addr: dict) -> list[Issue]:
                 code="MISSING_HOUSE_NUMBER",
                 description=f"Street '{street}' is filled but HouseNumber is empty and no number found in street.",
                 hint="Add the house number to the HouseNumber field.",
+            ))
+
+    # 9. HouseNumber equals ZIP code — the real house number is missing; it may
+    #    be embedded in the Street field along with the street name.
+    if house_number and zip_code and house_number == zip_code:
+        issues.append(Issue(
+            code="HOUSE_NUMBER_EQUALS_ZIP",
+            description=(
+                f"HouseNumber '{house_number}' equals the ZIP code '{zip_code}' — "
+                f"this is almost certainly a data-entry error. The real house number "
+                f"may be embedded in the Street field ('{street}')."
+            ),
+            hint=(
+                f"Parse the real house number from Street ('{street}') and "
+                f"set HouseNumber to that value."
+            ),
+        ))
+
+    # 10. Street is a single letter AND Company contains a full street address.
+    #     Pattern: customer entered street initial in Street (e.g. "A"), real
+    #     street+number is in Company (e.g. "Geerenstrasse 24").
+    if street and len(street) == 1 and street.isalpha() and company:
+        m_co = _STREET_HOUSENUMBER_RE.match(company)
+        if m_co and m_co.group(1).strip():
+            issues.append(Issue(
+                code="STREET_IS_SINGLE_LETTER_COMPANY_HAS_ADDRESS",
+                description=(
+                    f"Street field contains only a single letter '{street}', "
+                    f"while Company '{company}' looks like a full street address. "
+                    f"Suggested: Street='{m_co.group(1).strip()}', "
+                    f"HouseNumber='{m_co.group(2).strip()}', "
+                    f"AddressAddition from original Street+HouseNumber, Company=''."
+                ),
+                hint=(
+                    f"Parse Company as the real street address. "
+                    f"Move original Street ('{street}') and HouseNumber to AddressAddition."
+                ),
             ))
 
     return issues

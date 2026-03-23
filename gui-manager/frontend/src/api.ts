@@ -73,6 +73,22 @@ export async function getSheetExists(toolId: string, code: string): Promise<bool
   return data.exists
 }
 
+export async function getPackaging(toolId: string): Promise<{
+  mappings: PackagingMapping[]
+  packageTypes: PackageType[]
+}> {
+  const res = await apiFetch(`/tools/${toolId}/packaging`)
+  return res.json()
+}
+
+export async function updatePackaging(toolId: string, comboKey: string, name: string): Promise<{ ok: boolean }> {
+  const res = await apiFetch(`/tools/${toolId}/packaging/update`, {
+    method: 'POST',
+    body: JSON.stringify({ comboKey, name }),
+  })
+  return res.json()
+}
+
 export async function getToolFileTree(id: string): Promise<FileTreeNode[]> {
   const res = await apiFetch(`/tools/${id}/filetree`)
   return res.json()
@@ -121,6 +137,12 @@ export interface ToolFunction {
   supports_dry_run?: boolean
 }
 
+export interface ToolPanel {
+  id: string
+  name: string
+  panel_type: string
+}
+
 export interface Tool {
   id: string
   name: string
@@ -133,7 +155,20 @@ export interface Tool {
   reorder_order?: number
   functions?: ToolFunction[]
   file_tree?: string[]
+  panels?: ToolPanel[]
   permissions_required?: string[]
+}
+
+export interface PackagingMapping {
+  comboKey: string
+  name: string
+  id: number | null
+  setAt: string | null
+}
+
+export interface PackageType {
+  name: string
+  id: number | null
 }
 
 export interface Manufacturer {

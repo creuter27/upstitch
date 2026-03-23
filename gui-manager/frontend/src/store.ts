@@ -3,13 +3,14 @@ import { Tool } from './api'
 
 export interface Tab {
   id: string
-  type: 'tool' | 'file' | 'browser' | 'settings' | 'reorder'
+  type: 'tool' | 'file' | 'browser' | 'settings' | 'reorder' | 'packaging'
   title: string
   // type-specific
   toolId?: string
   filePath?: string
   fileLanguage?: string
   url?: string
+  panelId?: string
 }
 
 interface AppState {

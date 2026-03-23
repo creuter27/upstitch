@@ -4,6 +4,7 @@ import FileEditor, { dirtyPaths } from './FileEditor'
 import BrowserTab from './BrowserTab'
 import SettingsPage from './SettingsPage'
 import ReorderPanel from './ReorderPanel'
+import PackagingPanel from './PackagingPanel'
 
 const TYPE_ICON: Record<string, string> = {
   tool: '🔧',
@@ -86,6 +87,8 @@ export default function MainArea() {
           <BrowserTab url={activeTab.url} />
         ) : activeTab.type === 'reorder' && activeTab.toolId ? (
           <ReorderPanel toolId={activeTab.toolId} />
+        ) : activeTab.type === 'packaging' && activeTab.toolId ? (
+          <PackagingPanel toolId={activeTab.toolId} />
         ) : activeTab.type === 'settings' ? (
           <SettingsPage />
         ) : null}

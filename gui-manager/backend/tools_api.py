@@ -1,5 +1,7 @@
+import json
 import os
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from auth import get_current_user
 from db import User
+from models import PackagingUpdate
 
 router = APIRouter()
 
@@ -231,6 +234,73 @@ def check_sheet_exists(
     except Exception:
         exists = False
     return {"exists": exists}
+
+
+@router.get("/api/tools/{tool_id}/packaging")
+def get_packaging(tool_id: str, current_user: User = Depends(get_current_user)) -> dict:
+    """Return package type mappings and available package types for a tool."""
+    manifest = get_tool_by_id(tool_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_id}' not found")
+    tool_path = resolve_tool_path(manifest.get("path", ""))
+
+    mapping_file = os.path.join(tool_path, "data", "package_type_mapping.json")
+    raw_mappings: dict = {}
+    if os.path.isfile(mapping_file):
+        with open(mapping_file, "r", encoding="utf-8") as f:
+            raw_mappings = json.load(f) or {}
+
+    package_types_file = os.path.join(tool_path, "data", "package_types.yaml")
+    package_types: list = []
+    if os.path.isfile(package_types_file):
+        with open(package_types_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+            package_types = data.get("package_types", [])
+
+    mappings = [
+        {"comboKey": k, "name": v.get("name", ""), "id": v.get("id"), "setAt": v.get("set_at")}
+        for k, v in raw_mappings.items()
+    ]
+    return {"mappings": mappings, "packageTypes": package_types}
+
+
+@router.post("/api/tools/{tool_id}/packaging/update")
+def update_packaging(
+    tool_id: str,
+    body: PackagingUpdate,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Update the package type for a combo key."""
+    manifest = get_tool_by_id(tool_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_id}' not found")
+    tool_path = resolve_tool_path(manifest.get("path", ""))
+
+    mapping_file = os.path.join(tool_path, "data", "package_type_mapping.json")
+    raw_mappings: dict = {}
+    if os.path.isfile(mapping_file):
+        with open(mapping_file, "r", encoding="utf-8") as f:
+            raw_mappings = json.load(f) or {}
+
+    # Resolve id from package_types.yaml
+    package_types_file = os.path.join(tool_path, "data", "package_types.yaml")
+    pkg_id = None
+    if os.path.isfile(package_types_file):
+        with open(package_types_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+            for pt in data.get("package_types", []):
+                if pt.get("name") == body.name:
+                    pkg_id = pt.get("id")
+                    break
+
+    raw_mappings[body.comboKey] = {
+        "name": body.name,
+        "id": pkg_id,
+        "set_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    with open(mapping_file, "w", encoding="utf-8") as f:
+        json.dump(raw_mappings, f, indent=2, ensure_ascii=False)
+    return {"ok": True}
 
 
 @router.get("/api/tools/{tool_id}/filetree")
