@@ -22,15 +22,14 @@ import yaml
 DATA_DIR = Path(__file__).parent.parent / "data"
 LAST_RUN_FILE = DATA_DIR / "last_run.json"
 
-# Order states to always skip regardless of config (cancelled, deleted)
-_ALWAYS_SKIP = {6, 8}
-
 
 def load_fetch_config() -> dict:
     """
     Load order fetch settings from config.yaml (merged with platform override).
     Exits with an error if the base config file is not found.
-    Returns a dict with keys: state_ids (list[int]), lookback_hours (int).
+    Returns a dict with keys:
+        state_ids (list[int]), lookback_hours (int),
+        criterion (str), tag_name (str).
     """
     from execution.config_loader import load_config, _CONFIG_DIR
     if not (_CONFIG_DIR / "config.yaml").exists():
@@ -46,8 +45,15 @@ def load_fetch_config() -> dict:
     raw = cfg.get("order_state_id")
     state_ids = [int(s) for s in (raw if isinstance(raw, list) else [raw])] if raw is not None else []
     lookback_hours = int(cfg.get("lookback_hours", 48))
+    criterion = str(cfg.get("orderFetchCriterion") or "orderStatus").strip()
+    tag_name = str(cfg.get("tagNameForOrderFetching") or "").strip()
 
-    return {"state_ids": state_ids, "lookback_hours": lookback_hours}
+    return {
+        "state_ids": state_ids,
+        "lookback_hours": lookback_hours,
+        "criterion": criterion,
+        "tag_name": tag_name,
+    }
 
 
 def load_last_run() -> datetime | None:
@@ -89,22 +95,56 @@ def compute_since(lookback_hours: int, override: str | None = None) -> str:
     return since_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def fetch_orders_since(client, since: str, state_ids: list[int] | None = None) -> list[dict]:
+def _order_has_tag(order: dict, tag_name: str) -> bool:
+    """Return True if the order has a tag matching tag_name (case-insensitive)."""
+    tag_lower = tag_name.lower()
+    for t in (order.get("Tags") or []):
+        if isinstance(t, str) and t.lower() == tag_lower:
+            return True
+        if isinstance(t, dict) and t.get("Name", "").lower() == tag_lower:
+            return True
+    return False
+
+
+def fetch_orders_since(
+    client,
+    since: str,
+    state_ids: list[int] | None = None,
+    criterion: str = "orderStatus",
+    tag_name: str = "",
+) -> list[dict]:
     """
     Fetch orders from Billbee created since `since` (ISO-8601 string).
 
-    If state_ids is provided and non-empty, only orders in those states are
-    returned (one API call per state, deduplicated by BillBeeOrderId).
-    If state_ids is empty/None, all states except cancelled/deleted are returned.
+    criterion controls which orders are returned:
+      'orderStatus'  — orders in state_ids (or all states if state_ids is empty)
+      'tagSet'       — all orders (any state) where tag_name is set
+      'tagNotSet'    — all orders (any state) where tag_name is NOT set
 
-    Orders with no ShippingAddress are skipped.
+    All orders matching the criteria are returned, including cancelled/deleted
+    orders and orders with no shipping address. Callers are responsible for
+    detecting and reporting those cases.
     """
-    print(f"[fetch] Fetching orders since {since} "
-          f"(states: {state_ids if state_ids else 'all'}) ...")
+    if criterion == "tagSet":
+        mode_desc = f"tag '{tag_name}' is set"
+    elif criterion == "tagNotSet":
+        mode_desc = f"tag '{tag_name}' is not set"
+    else:
+        mode_desc = f"states: {state_ids if state_ids else 'all'}"
+
+    print(f"[fetch] Fetching orders since {since} ({mode_desc}) ...")
 
     seen_ids: set = set()
     orders: list[dict] = []
     total_api = 0
+
+    def _accept(order: dict) -> bool:
+        """Return True if the order has not been seen yet (deduplication only)."""
+        oid = order.get("BillBeeOrderId") or order.get("Id")
+        if oid in seen_ids:
+            return False
+        seen_ids.add(oid)
+        return True
 
     def _collect(state_id=None):
         nonlocal total_api
@@ -114,29 +154,39 @@ def fetch_orders_since(client, since: str, state_ids: list[int] | None = None) -
             page_size=250,
         ):
             total_api += 1
-            oid = order.get("BillBeeOrderId") or order.get("Id")
-            if oid in seen_ids:
+            if not _accept(order):
                 continue
-            seen_ids.add(oid)
-
-            state = order.get("OrderStateId") or order.get("State") or 0
-            if state in _ALWAYS_SKIP:
-                continue
-
-            addr = order.get("ShippingAddress") or {}
-            if not any(addr.values()):
-                continue
-
             orders.append(order)
 
-    if state_ids:
-        for sid in state_ids:
-            _collect(sid)
-    else:
+    if criterion == "tagSet":
+        if not tag_name:
+            print("[fetch] WARNING: orderFetchCriterion is 'tagSet' but tagNameForOrderFetching is empty — fetching nothing.")
+            return []
+        # Fetch all orders, keep those with the tag
         _collect()
+        tagged = [o for o in orders if _order_has_tag(o, tag_name)]
+        print(f"[fetch] {total_api} orders from API, {len(tagged)} have tag '{tag_name}'")
+        return tagged
 
-    print(f"[fetch] {total_api} orders from API, {len(orders)} eligible")
-    return orders
+    elif criterion == "tagNotSet":
+        if not tag_name:
+            print("[fetch] WARNING: orderFetchCriterion is 'tagNotSet' but tagNameForOrderFetching is empty — fetching nothing.")
+            return []
+        # Fetch all orders, keep those without the tag
+        _collect()
+        untagged = [o for o in orders if not _order_has_tag(o, tag_name)]
+        print(f"[fetch] {total_api} orders from API, {len(untagged)} do not have tag '{tag_name}'")
+        return untagged
+
+    else:
+        # Default: orderStatus
+        if state_ids:
+            for sid in state_ids:
+                _collect(sid)
+        else:
+            _collect()
+        print(f"[fetch] {total_api} orders from API, {len(orders)} fetched")
+        return orders
 
 
 if __name__ == "__main__":

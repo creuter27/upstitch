@@ -243,8 +243,9 @@ def get_tool_filetree(
         raise HTTPException(status_code=404, detail=f"Tool '{tool_id}' not found")
 
     raw_path = manifest.get("path", "")
-    # Resolve relative paths against the gui-manager root so yamls can use ../ProjectName
-    tool_path = os.path.realpath(os.path.join(GUI_MANAGER_ROOT, raw_path))
+    # manifest["path"] is already an absolute resolved path from load_tool_manifests;
+    # use resolve_tool_path to keep T:\ form on Windows (realpath would convert to UNC).
+    tool_path = resolve_tool_path(raw_path)
     file_tree_entries: list[str] = manifest.get("file_tree", [])
 
     results = []

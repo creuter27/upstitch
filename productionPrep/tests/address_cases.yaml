@@ -161,6 +161,24 @@ cases:
     expected_issues: []
     expected_fix: {}
 
+  # ── City must not be changed when original is correct ───────────────────────
+  - description: "City correct — AddressAddition with personal c/o name must not trigger city change"
+    notes: >
+      Real case: Carbone Giovanna, IT. AddressAddition='Presso Carbone Giovanna' (c/o note)
+      contains the recipient's last name. OpenCage was confused and returned 'Giovanna' as
+      the city with high confidence. The original city 'Anagni' is correct and must not be
+      replaced. Fix: verify original city independently (ZIP+city+country) before suggesting
+      a replacement.
+    addr:
+      Street: "Via Generale Carlo Alberto Dalla Chiesa"
+      HouseNumber: "9A"
+      AddressAddition: "Presso Carbone Giovanna"
+      Zip: "03012"
+      City: "Anagni"
+      CountryISO2: "IT"
+    expected_issues: []
+    expected_fix: {}
+
   # ── Missing house number (no number anywhere) ────────────────────────────────
   - description: "Street filled but house number missing and not detectable"
     addr:

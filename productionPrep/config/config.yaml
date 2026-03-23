@@ -16,12 +16,28 @@
 #   5  = Reklamation               6  = Geloescht
 #   7  = Abgeschlossen (Completed) 8  = Storniert
 #   9  = Archiviert               10  = Rated
-#  13  = Gepackt                  16  = Im_Fulfillment
+#  11  = Mahnung                  12  = Mahnung 2
+#  13  = Gepackt                  14  = Angeboten
+#  15  = Zahlungserinnerung       16  = Im_Fulfillment
 #  17  = Retoure
 # Single state:
-order_state_id: 3
+order_state_id: [3, 16]
 # Multiple states:
 # order_state_id: [3, 13]
+
+# ---------------------------------------------------------------------------
+# Order fetch criterion
+# ---------------------------------------------------------------------------
+# Controls which orders to fetch for address fixing.
+#
+# 'orderStatus'  — fetch orders whose state matches order_state_id (default)
+# 'tagSet'       — fetch all orders (any state) that have the tag named by
+#                  tagNameForOrderFetching, regardless of order state
+# 'tagNotSet'    — fetch all orders (any state) that do NOT have that tag
+#
+# tagNameForOrderFetching is only used when orderFetchCriterion is tagSet or tagNotSet.
+orderFetchCriterion: orderStatus
+tagNameForOrderFetching: ""
 
 order_state_transitions:
   # State to set each order to after address fixes and package type tags are applied.
@@ -38,8 +54,7 @@ order_state_transitions:
 # Lookback window
 # ---------------------------------------------------------------------------
 # How many hours before the last recorded run to look back.
-# 48 h covers the weekend gap (Friday → Monday).
-lookback_hours: 48
+lookback_hours: 336
 
 # Optional hard override: always fetch from this exact datetime.
 # Comment out to use lookback_hours.

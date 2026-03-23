@@ -7,6 +7,10 @@ interface Props {
   language?: string
 }
 
+// Module-level cache — survives tab switches (component remounts)
+const draftCache: Record<string, string> = {}
+export const dirtyPaths = new Set<string>()
+
 export default function FileEditor({ filePath, language }: Props) {
   const [content, setContent] = useState('')
   const [originalContent, setOriginalContent] = useState('')
@@ -21,10 +25,17 @@ export default function FileEditor({ filePath, language }: Props) {
     setError('')
     readFile(filePath)
       .then((data) => {
-        setContent(data.content)
-        setOriginalContent(data.content)
+        const draft = draftCache[filePath]
+        const serverContent = data.content
+        setOriginalContent(serverContent)
         setDetectedLanguage(language || data.language)
-        setSaveStatus('saved')
+        if (draft !== undefined && draft !== serverContent) {
+          setContent(draft)
+          setSaveStatus('unsaved')
+        } else {
+          setContent(serverContent)
+          setSaveStatus('saved')
+        }
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false))
@@ -35,6 +46,8 @@ export default function FileEditor({ filePath, language }: Props) {
     try {
       await writeFile(filePath, content)
       setOriginalContent(content)
+      delete draftCache[filePath]
+      dirtyPaths.delete(filePath)
       setSaveStatus('saved')
     } catch (e) {
       setSaveStatus('error')
@@ -58,8 +71,12 @@ export default function FileEditor({ filePath, language }: Props) {
     const newValue = value ?? ''
     setContent(newValue)
     if (newValue !== originalContent) {
+      draftCache[filePath] = newValue
+      dirtyPaths.add(filePath)
       setSaveStatus('unsaved')
     } else {
+      delete draftCache[filePath]
+      dirtyPaths.delete(filePath)
       setSaveStatus('saved')
     }
   }

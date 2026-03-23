@@ -99,6 +99,12 @@ _WARN = _e("⚠", "!")
 # All Billbee writes are deferred until the user confirms at the end of the run.
 _pending_changes: list[dict] = []
 
+# Billbee order state names for error reporting
+_ORDER_STATE_NAMES = {
+    6: "Geloescht (deleted)",
+    8: "Storniert (cancelled)",
+}
+
 
 _PENDING_CASES_FILE = Path(__file__).parent / "tests" / "pending_cases.yaml"
 
@@ -836,6 +842,25 @@ def process_order(
                 ))
             else:
                 geo_suggestion = _geocode_suggestion(addr, geo, geo_company=geo_company)
+
+                # If a pure city replacement is suggested (not a sub-locality
+                # correction where AddressAddition is also being updated), verify
+                # the original city independently. OpenCage can be confused by
+                # AddressAddition containing a personal name (e.g. "c/o Carbone
+                # Giovanna") and return a wrong city with high confidence.
+                # Geocoding ZIP + orig_city + country alone will confirm whether
+                # the original city is valid. If it is, suppress the city change.
+                if "City" in geo_suggestion and "AddressAddition" not in geo_suggestion:
+                    orig_city = (addr.get("City") or "").strip()
+                    if orig_city:
+                        city_verify = geocode({
+                            "Zip": addr.get("Zip", ""),
+                            "City": orig_city,
+                            "CountryISO2": addr.get("CountryISO2", "DE"),
+                        })
+                        if city_verify and city_verify.get("confidence", 0) >= 8:
+                            del geo_suggestion["City"]
+
                 if geo_suggestion:
                     _auto = False
                     if not force_manual:
@@ -1013,12 +1038,28 @@ def _run_order_loop(
     stats = {
         "fixed": 0, "rejected": 0, "skipped": 0, "no_issue": 0,
         "pkg_auto": 0, "pkg_set": 0, "pkg_skipped": 0,
+        "errors": [],   # list of {order_number, reason}
     }
-    n = len(orders)
+
+    # Classify orders before the main loop: detect unusable orders upfront so
+    # they are reported clearly rather than silently skipped.
+    processable: list[dict] = []
+    for order in orders:
+        num = order.get("OrderNumber") or str(order.get("BillBeeOrderId") or order.get("Id") or "?")
+        state = order.get("OrderStateId") or order.get("State") or 0
+        addr = order.get("ShippingAddress") or {}
+        if state in _ORDER_STATE_NAMES:
+            stats["errors"].append({"order_number": num, "reason": _ORDER_STATE_NAMES[state]})
+        elif not any(addr.values()):
+            stats["errors"].append({"order_number": num, "reason": "No shipping address"})
+        else:
+            processable.append(order)
+
+    n = len(processable)
     label = " [yellow bold](manual mode)[/]" if force_manual else ""
     console.print(f"\n[cyan]Checking {n} orders...{label}[/]")
     try:
-        for i, order in enumerate(orders, 1):
+        for i, order in enumerate(processable, 1):
             addr_result, pkg_result = process_order(
                 order=order,
                 skip_geocode=skip_geocode,
@@ -1119,7 +1160,12 @@ def main() -> None:
         console.print(f"[dim]{len(pkg_types)} package types available[/]")
 
     # Fetch orders
-    orders = fetch_orders_since(client, since, state_ids=fetch_cfg["state_ids"])
+    orders = fetch_orders_since(
+        client, since,
+        state_ids=fetch_cfg["state_ids"],
+        criterion=fetch_cfg.get("criterion", "orderStatus"),
+        tag_name=fetch_cfg.get("tag_name", ""),
+    )
     _log(f"Orders fetched: {len(orders)}  (since {since})")
 
     if not orders:
@@ -1140,19 +1186,28 @@ def main() -> None:
     stats = _run_order_loop(orders, **loop_kwargs)
 
     # ── Summary panel ────────────────────────────────────────────────────────
+    order_errors = stats.get("errors") or []
+    err_line = f"\n  [bold red]Cannot process:[/]         {len(order_errors)}" if order_errors else ""
     console.print()
     console.print(Panel(
         f"[bold]Summary[/]\n"
-        f"  Orders checked:          {len(orders)}\n"
+        f"  Orders fetched:          {len(orders)}\n"
         f"  [green]Address fixed:[/]          {stats['fixed']}\n"
         f"  [red]Address rejected:[/]       {stats['rejected']}\n"
         f"  [dim]Address skipped:[/]        {stats['skipped']}\n"
         f"  [dim]No address issues:[/]      {stats['no_issue']}\n"
         f"  [cyan]Package type auto:[/]      {stats['pkg_auto']}\n"
         f"  [cyan]Package type set:[/]       {stats['pkg_set']}\n"
-        f"  [dim]Package type skipped:[/]   {stats['pkg_skipped']}",
+        f"  [dim]Package type skipped:[/]   {stats['pkg_skipped']}"
+        + err_line,
         border_style="cyan",
     ))
+
+    if order_errors:
+        lines = [f"[bold red]✗ {len(order_errors)} order(s) could not be processed:[/]\n"]
+        for e in order_errors:
+            lines.append(f"  [bold]{e['order_number']}[/]  —  {e['reason']}")
+        console.print(Panel("\n".join(lines), border_style="red", title="[bold red]Errors[/]"))
 
     # ── Pending changes: confirm before writing to Billbee ───────────────────
     _show_pending_summary()

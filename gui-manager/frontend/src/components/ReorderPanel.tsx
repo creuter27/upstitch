@@ -76,11 +76,8 @@ export default function ReorderPanel({ toolId }: Props) {
     if (!toolPath) return
     if (terminalCollapsed) toggleTerminal()
     setTimeout(() => {
-      sendTerminalCommand(`pushd "${toolPath}"\r`)
-      setTimeout(() => {
-        sendTerminalCommand(`${cmd}\r`)
-        setIsRunning(true)
-      }, 100)
+      sendTerminalCommand(`pushd "${toolPath}" && ${cmd}\r`)
+      setIsRunning(true)
     }, 150)
   }
 

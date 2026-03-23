@@ -1,6 +1,6 @@
 import { useStore } from '../store'
 import ToolPanel from './ToolPanel'
-import FileEditor from './FileEditor'
+import FileEditor, { dirtyPaths } from './FileEditor'
 import BrowserTab from './BrowserTab'
 import SettingsPage from './SettingsPage'
 import ReorderPanel from './ReorderPanel'
@@ -51,6 +51,9 @@ export default function MainArea() {
                   className="ml-1 text-vscode-muted hover:text-vscode-text text-xs rounded px-0.5 shrink-0"
                   onClick={(e) => {
                     e.stopPropagation()
+                    if (tab.filePath && dirtyPaths.has(tab.filePath)) {
+                      if (!window.confirm('You have unsaved changes. Close anyway?')) return
+                    }
                     closeTab(tab.id)
                   }}
                   title="Close tab"

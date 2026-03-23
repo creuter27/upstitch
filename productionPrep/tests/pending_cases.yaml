@@ -138,3 +138,64 @@ cases:
     Street: Geerenstrasse
     HouseNumber: '24'
     AddressAddition: 1-0203
+- description: 'Auto: Order #028-5384544-6961944 (CH)'
+  timestamp: '2026-03-23T04:41:49Z'
+  outcome: manually_edited
+  addr:
+    FirstName: Arijeet
+    LastName: Roychoudhury
+    Company: Geerenstrasse 24
+    Street: A
+    HouseNumber: 1-0203
+    Zip: '8302'
+    City: Kloten
+    CountryISO2: CH
+  expected_issues: []
+  expected_fix: {}
+  system_suggestion:
+    Street: Am Balsberg
+  user_edit:
+    Company: '-'
+    Street: Geerenstrasse
+    HouseNumber: '24'
+    AddressAddition: A 1-0203
+- description: 'Auto: Order #4010995439 (DE)'
+  timestamp: '2026-03-23T04:46:29Z'
+  outcome: manually_edited
+  addr:
+    FirstName: Nancy
+    LastName: Greiffenreich-Sieb
+    Street: Danziger Str.
+    AddressAddition: '12'
+    Zip: '31749'
+    City: Auetal-Rehren
+    CountryISO2: DE
+  expected_issues: []
+  expected_fix: {}
+  system_suggestion:
+    HouseNumber: '12'
+    AddressAddition: ''
+    Street: Danziger Straße
+    City: Auetal
+  user_edit:
+    HouseNumber: '12'
+    AddressAddition: Rehren
+    City: Auetal
+- description: 'Auto: Order #302-0875844-4257965 (AT)'
+  timestamp: '2026-03-23T06:54:09Z'
+  outcome: manually_edited
+  addr:
+    FirstName: Frau
+    LastName: Zehra Aksu
+    Street: Ketzergasse 98/1/
+    HouseNumber: '3'
+    Zip: '1230'
+    City: Wien
+    CountryISO2: AT
+  expected_issues: []
+  expected_fix: {}
+  system_suggestion:
+    Street: Ketzergasse
+  user_edit:
+    Street: Ketzergasse
+    AddressAddition: 98/1/

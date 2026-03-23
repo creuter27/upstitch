@@ -35,6 +35,12 @@ from pathlib import Path
 # Tag prefix used to mark the chosen package type on an order
 _PKG_TAG_PREFIX = "Verpackungstyp:"
 
+# Billbee state IDs that mean the order cannot be shipped
+_UNSHIPPABLE_STATES = {
+    6: "Geloescht (deleted)",
+    8: "Storniert (cancelled)",
+}
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -257,6 +263,32 @@ def create_labels_with_polling(
                 )
                 continue
 
+            # Fail permanently if the order is cancelled/deleted or has no address
+            fresh_state = fresh_order.get("OrderStateId") or fresh_order.get("State") or 0
+            fresh_addr = fresh_order.get("ShippingAddress") or {}
+            if fresh_state in _UNSHIPPABLE_STATES:
+                err = f"Order is {_UNSHIPPABLE_STATES[fresh_state]} — cannot create label"
+                _log(f"  {order_number}  ERROR: {err}", f"  [red]{order_number}[/]  ERROR: {err}")
+                stats["failed"] += 1
+                stats["errors"].append({
+                    "order_number": order_number,
+                    "operation": "label creation",
+                    "error": err,
+                })
+                resolved_this_round.add(order_number)
+                continue
+            if not any(fresh_addr.values()):
+                err = "Order has no shipping address — cannot create label"
+                _log(f"  {order_number}  ERROR: {err}", f"  [red]{order_number}[/]  ERROR: {err}")
+                stats["failed"] += 1
+                stats["errors"].append({
+                    "order_number": order_number,
+                    "operation": "label creation",
+                    "error": err,
+                })
+                resolved_this_round.add(order_number)
+                continue
+
             pkg_tag = _get_package_type_tag(fresh_order)
             if not pkg_tag:
                 info["no_pkg_type"] = True
@@ -269,6 +301,19 @@ def create_labels_with_polling(
                 continue
 
             info["no_pkg_type"] = False
+
+            # Skip if a label file for this order already exists in the output dir.
+            # Matches any file whose name contains the order number (external order ID).
+            existing = list(output_dir.glob(f"*{order_number}*")) if output_dir.exists() else []
+            if existing:
+                _log(
+                    f"  {order_number}  label already exists ({existing[0].name}) — skipping",
+                    f"  [yellow]{order_number}[/]  [dim]label already exists ({existing[0].name}) — skipping[/]",
+                )
+                stats["skipped"] += 1
+                resolved_this_round.add(order_number)
+                continue
+
             _log(
                 f"  {order_number}  {pkg_tag}  -> creating label...",
                 f"  [cyan]{order_number}[/]  [dim]{pkg_tag}[/]  -> creating label...",

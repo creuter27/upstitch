@@ -11,9 +11,23 @@ from models import FileContent
 router = APIRouter()
 
 # Security: only allow paths within the code directory (parent of gui-manager's parent).
-# Resolves dynamically so the repo can be moved without editing this file.
-# Layout: <code_dir>/gui-manager/backend/files_api.py → code_dir = parent.parent.parent
-ALLOWED_BASE = Path(__file__).resolve().parent.parent.parent
+# On Windows, use abspath (not realpath/resolve) to keep the drive-letter form (T:\)
+# instead of resolving to UNC (\\tresoritdrive_...\...) — the two forms are incompatible
+# for is_relative_to(), causing false 403 denials on Tresorit virtual drives.
+def _abspath(p: str) -> Path:
+    """Normalise a path without resolving symlinks or virtual-drive mappings.
+
+    On Windows, os.path.realpath / Path.resolve() converts Tresorit's T:\\ drive
+    to its UNC form (\\\\tresoritdrive_...\\...).  Using abspath keeps the
+    drive-letter form so paths from the file-tree (also abspath) stay comparable.
+    """
+    if os.name == "nt":
+        return Path(os.path.abspath(p))
+    return Path(p).resolve()
+
+ALLOWED_BASE = _abspath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+)
 
 LANGUAGE_MAP = {
     ".py": "python",
@@ -45,7 +59,7 @@ def detect_language(path: str) -> str:
 
 def validate_path(path: str) -> str:
     """Resolve and validate that the path is within the allowed base."""
-    resolved = Path(path).resolve()
+    resolved = _abspath(path)
     if not resolved.is_relative_to(ALLOWED_BASE):
         raise HTTPException(
             status_code=403,

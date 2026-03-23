@@ -40,12 +40,11 @@ export default function ToolPanel({ toolId }: Props) {
 
     const cmd = (dryRun && fn.supports_dry_run) ? `${fn.command} --dry-run` : fn.command
 
+    // Send as a single line so only one string passes through the Windows PTY
+    // input buffer — prevents leftover bytes being read as stdin by subprocesses.
     setTimeout(() => {
-      sendTerminalCommand(`pushd "${tool.path}"\r`)
-      setTimeout(() => {
-        sendTerminalCommand(`${cmd}\r`)
-        setIsRunning(true)
-      }, 100)
+      sendTerminalCommand(`pushd "${tool.path}" && ${cmd}\r`)
+      setIsRunning(true)
     }, 150)
   }
 
