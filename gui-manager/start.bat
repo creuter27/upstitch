@@ -44,14 +44,26 @@ echo Using npm: %NPM%
 
 REM -- Install if vite is missing from external location --------------------
 REM    npm install runs in %VENV% (C: drive), never in the Tresorit folder.
-REM    'type' reads files from T: via direct file read (CreateFile API) which
-REM    Tresorit supports. 'copy' and 'if exist <dir>' use FindFirstFile which
-REM    Tresorit blocks — those hang on T:.
+REM    [System.IO.File]::Copy (via PowerShell $env: vars) uses CopyFile Win32 API
+REM    (direct file handle, no FindFirstFile) — works on Tresorit virtual drives.
+REM    'type' redirect is the fallback; 'copy' and 'if exist <dir>' use FindFirstFile
+REM    which Tresorit blocks on T:.
 if not exist "%MODULES%\.bin\vite.cmd" (
     echo Installing frontend dependencies...
     mkdir "%VENV%" 2>nul
-    type "%FRONTEND_DIR%\package.json" > "%VENV%\package.json"
-    type "%FRONTEND_DIR%\package-lock.json" > "%VENV%\package-lock.json" 2>nul
+    set "PSRC=%FRONTEND_DIR%\package.json"
+    set "PDST=%VENV%\package.json"
+    powershell -NoProfile -Command "[System.IO.File]::Copy($env:PSRC, $env:PDST, $true)" >nul 2>&1
+    if not exist "%VENV%\package.json" type "%FRONTEND_DIR%\package.json" > "%VENV%\package.json"
+    if not exist "%VENV%\package.json" (
+        echo ERROR: Cannot read package.json - check Tresorit sync.
+        pause
+        exit /b 1
+    )
+    set "PSRC=%FRONTEND_DIR%\package-lock.json"
+    set "PDST=%VENV%\package-lock.json"
+    powershell -NoProfile -Command "[System.IO.File]::Copy($env:PSRC, $env:PDST, $true)" >nul 2>&1
+    if not exist "%VENV%\package-lock.json" type "%FRONTEND_DIR%\package-lock.json" > "%VENV%\package-lock.json" 2>nul
     cd /d "%VENV%"
     "%NPM%" install
     if errorlevel 1 (

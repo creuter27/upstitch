@@ -172,6 +172,25 @@ def main() -> None:
     log_file.close()
     console.print(f"[dim]Log saved: {log_path}[/]")
 
+    # Show missing-document reminder if fetch_documents ran earlier in this session
+    _missing_state = _PROJECT_ROOT / "logs" / "missing_documents.json"
+    if _missing_state.exists():
+        try:
+            import json as _json
+            _state = _json.loads(_missing_state.read_text(encoding="utf-8"))
+            _missing = _state.get("missing") or []
+            _amazon = sorted(n for n in _missing if re.match(r"^\d{3}-\d{7}-\d{7}$", n))
+            if _amazon:
+                console.print()
+                console.print(
+                    f"[bold yellow]Missing documents — {len(_amazon)} Amazon order(s):[/]"
+                )
+                for _on in _amazon:
+                    _url = f"https://sellercentral.amazon.de/orders-v3/order/{_on}"
+                    console.print(f"  [cyan]{_on}[/]  [link={_url}]{_url}[/link]")
+        except Exception:
+            pass
+
 
 if __name__ == "__main__":
     main()

@@ -323,6 +323,50 @@ cases:
     expected_issues: []
     expected_fix: {}
 
+  # ── Municipality entered as city (geocode-only fix) ─────────────────────────
+  - description: "DE: Customer entered municipality as city — no rule-based issues, geocode handles it"
+    notes: >
+      Real case: Tanja Lang, DE #4012502991. Customer entered 'Bad Schönborn' (the
+      municipality) as the city. The actual delivery town is 'Bad Langenbrücken'.
+      OpenCage (confidence 10/10) returns town=Bad Langenbrücken, municipality=Bad Schönborn.
+      Expected behaviour: _geocode_suggestion sets City=Bad Langenbrücken and
+      AddressAddition=Bad Schönborn (preserving the municipality). Deterministic
+      check finds no issues because all fields look structurally valid.
+    addr:
+      FirstName: Tanja
+      LastName: Lang
+      Street: "Donauschwabenstr."
+      HouseNumber: "2b"
+      Zip: "76669"
+      City: "Bad Schönborn"
+      CountryISO2: "DE"
+    expected_issues: []
+    expected_fix: {}
+
+  # ── STREET_IS_HOUSE_NUMBER fixed by deterministic rule; geocode re-verifies ──
+  - description: "AT: Street=house-number-only, Company=street name → deterministic fix, high geocode confidence after fix"
+    notes: >
+      Real case: Anna Jaich, AT #305-9887816-7347534. Street='17' (house number only),
+      Company='Bahnstraße' (street name). Original OpenCage confidence 7/10; after
+      applying deterministic fix (Street=Bahnstraße, HouseNumber=17, Company='') the
+      fixed address geocodes at 10/10 (Bahnstraße 17-19, 2120 Wolkersdorf im Weinviertel).
+      Expected behaviour: auto-apply without prompting user.
+    addr:
+      FirstName: Anna
+      LastName: Jaich
+      Company: "Bahnstraße"
+      Street: "17"
+      HouseNumber: ""
+      Zip: "2120"
+      City: "Obersdorf"
+      CountryISO2: "AT"
+    expected_issues:
+      - STREET_IS_HOUSE_NUMBER
+    expected_fix:
+      Company: ""
+      Street: "Bahnstraße"
+      HouseNumber: "17"
+
   # ── Missing house number (no number anywhere) ────────────────────────────────
   - description: "Street filled but house number missing and not detectable"
     addr:

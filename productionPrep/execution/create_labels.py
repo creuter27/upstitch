@@ -41,6 +41,11 @@ _UNSHIPPABLE_STATES = {
     8: "Storniert (cancelled)",
 }
 
+from execution.package_type_store import KEINE_PKG_TYPE as _KEINE_PKG_TYPE
+
+# Full Verpackungstyp tag that means "no label needed"
+_KEINE_TAG = f"{_PKG_TAG_PREFIX} {_KEINE_PKG_TYPE}"
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -178,18 +183,6 @@ def create_labels_with_polling(
     if not orders:
         return stats
 
-    # Build pending dict: order_number -> state
-    # last_error is updated each round so at timeout we report the most recent reason.
-    pending: dict[str, dict] = {}
-    for order in orders:
-        order_id = order.get("BillBeeOrderId") or order.get("Id")
-        order_number = order.get("OrderNumber") or str(order_id)
-        pending[order_number] = {
-            "order_id": int(order_id),
-            "last_error": None,    # most recent transient error, or None
-            "no_pkg_type": False,  # True if last fetch had no Verpackungstyp tag
-        }
-
     # Pre-fetch shipping providers once — they don't change during a run
     providers: list = []
     try:
@@ -201,6 +194,18 @@ def create_labels_with_polling(
             f"  Warning: could not pre-fetch shipping providers — will try per-order: {e}",
             f"  [yellow]Warning:[/] could not pre-fetch shipping providers: {e}",
         )
+
+    # Build pending dict: order_number -> state
+    # last_error is updated each round so at timeout we report the most recent reason.
+    pending: dict[str, dict] = {}
+    for order in orders:
+        order_id = order.get("BillBeeOrderId") or order.get("Id")
+        order_number = order.get("OrderNumber") or str(order_id)
+        pending[order_number] = {
+            "order_id": int(order_id),
+            "last_error": None,    # most recent transient error, or None
+            "no_pkg_type": False,  # True if last fetch had no Verpackungstyp tag
+        }
 
     start_ts = datetime.now(timezone.utc).timestamp()
     deadline_ts = start_ts + timeout_minutes * 60
@@ -301,6 +306,16 @@ def create_labels_with_polling(
                 continue
 
             info["no_pkg_type"] = False
+
+            # Orders tagged "Keine => kein Versand" require no shipping label.
+            if pkg_tag == _KEINE_TAG:
+                _log(
+                    f"  {order_number}  {pkg_tag} — no label needed, skipping",
+                    f"  [yellow]{order_number}[/]  [dim]{pkg_tag} — no label needed, skipping[/]",
+                )
+                stats["skipped"] += 1
+                resolved_this_round.add(order_number)
+                continue
 
             # Skip if a label file for this order already exists in the output dir.
             # Matches any file whose name contains the order number (external order ID).

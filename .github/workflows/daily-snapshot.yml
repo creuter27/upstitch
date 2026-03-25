@@ -1,0 +1,47 @@
+name: Daily snapshot
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # 03:00 UTC — after the Mac backup script runs at 01:00 local
+  workflow_dispatch:        # allow manual trigger
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for new commits since last snapshot tag
+        id: check
+        run: |
+          LAST=$(git tag --list 'snapshot-*' --sort=-version:refname | head -1)
+          if [ -z "$LAST" ]; then
+            echo "No previous snapshot — creating first one."
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          else
+            COUNT=$(git rev-list "${LAST}..HEAD" --count)
+            echo "Commits since $LAST: $COUNT"
+            echo "has_changes=$([ $COUNT -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Tag and release
+        if: steps.check.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="snapshot-$(date -u +%Y-%m-%d)"
+          git tag -d "$TAG" 2>/dev/null || true
+          gh release delete "$TAG" --yes 2>/dev/null || true
+          git tag "$TAG"
+          git push origin "$TAG" --force
+          COMMITS=$(git rev-list HEAD --count)
+          LAST_MSG=$(git log -1 --pretty=format:'%s')
+          gh release create "$TAG" \
+            --title "Snapshot $(date -u +%Y-%m-%d)" \
+            --notes "$(printf 'Automatic daily snapshot.\n\nLast commit: %s\nTotal commits: %d' "$LAST_MSG" "$COMMITS")" \
+            --prerelease

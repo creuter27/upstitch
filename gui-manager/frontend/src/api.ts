@@ -185,3 +185,66 @@ export interface FileTreeNode {
   type: 'file' | 'dir'
   children?: FileTreeNode[]
 }
+
+export interface InventoryProduct {
+  sku: string
+  billbeeId: number
+  title?: string
+  category: string
+  size: string
+  color: string
+  variant: string
+  stockTarget: number | null
+}
+
+// ---------------------------------------------------------------------------
+// Inventory API
+// ---------------------------------------------------------------------------
+
+export async function getInventoryManufacturers(toolId: string): Promise<string[]> {
+  const res = await apiFetch(`/tools/${toolId}/inventory/manufacturers`)
+  return res.json()
+}
+
+export async function getInventoryProducts(
+  toolId: string,
+  manufacturers: string[],
+): Promise<{ products: InventoryProduct[]; errors: { manufacturer: string; error: string }[] }> {
+  const params = new URLSearchParams({ manufacturers: manufacturers.join(',') })
+  const res = await apiFetch(`/tools/${toolId}/inventory/products?${params}`)
+  return res.json()
+}
+
+export async function getInventoryProductsFromBillbee(
+  toolId: string,
+  manufacturers: string[],
+): Promise<{ products: InventoryProduct[]; errors: { manufacturer: string; error: string }[] }> {
+  const params = new URLSearchParams({ manufacturers: manufacturers.join(',') })
+  const res = await apiFetch(`/tools/${toolId}/inventory/products/billbee?${params}`)
+  return res.json()
+}
+
+export async function queryInventoryStock(
+  toolId: string,
+  products: { sku: string; billbeeId: number }[],
+): Promise<{ stocks: Record<string, { stock: number; stockId: number }>; errors: string[] }> {
+  const res = await apiFetch(`/tools/${toolId}/inventory/stock/query`, {
+    method: 'POST',
+    body: JSON.stringify({ products }),
+  })
+  return res.json()
+}
+
+export async function updateInventoryStock(
+  toolId: string,
+  sku: string,
+  billbeeId: number,
+  _stockId: number | undefined,
+  newQuantity: number,
+): Promise<{ ok: boolean; sku: string; previousStock: number; newStock: number }> {
+  const res = await apiFetch(`/tools/${toolId}/inventory/stock/update`, {
+    method: 'POST',
+    body: JSON.stringify({ sku, billbeeId, newQuantity }),
+  })
+  return res.json()
+}

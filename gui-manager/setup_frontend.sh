@@ -27,6 +27,11 @@ npm install
 cp "$EXTERNAL/package-lock.json" "$SCRIPT_DIR/frontend/" 2>/dev/null || true
 rm -f "$EXTERNAL/package.json" "$EXTERNAL/package-lock.json"
 
+# Create a symlink frontend/node_modules → external so VS Code / TypeScript can find types.
+# The symlink itself is tiny; Tresorit syncs it as an opaque file, not the actual node_modules.
+ln -sfn "$MODULES" "$SCRIPT_DIR/frontend/node_modules"
+echo "Symlink: frontend/node_modules → $MODULES"
+
 echo
 echo "node_modules installed to: $MODULES"
 echo

@@ -29,9 +29,11 @@ Catalog tab:  "{MFR} B2B Catalog"
 
 import argparse
 import json
+import os
 import re
 import signal as _signal
 import sys
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -39,7 +41,7 @@ _LANG_RE = re.compile(r"^/([a-z]{2})(?:/|$)")
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from google_sheets_client import open_sheet_by_name, open_sheet, write_tab
+from google_sheets_client import open_sheet_by_name, open_sheet, create_sheet, write_tab
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +62,52 @@ def _wait(prompt: str) -> None:
         sys.exit(0)
 
 
+def _bring_browser_to_front(page) -> None:
+    """Bring the Playwright browser window to the OS foreground.
+
+    page.bring_to_front() activates the tab within the browser but does NOT
+    raise the browser window itself at the OS level on Windows.  The ctypes
+    block below handles that by enumerating top-level windows and calling
+    SetForegroundWindow on the first visible Chromium window.
+    """
+    try:
+        page.bring_to_front()
+    except Exception:
+        pass
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        import ctypes.wintypes
+        user32 = ctypes.windll.user32
+        found = [0]
+
+        EnumCB = ctypes.WINFUNCTYPE(
+            ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM
+        )
+
+        def _cb(hwnd, _):
+            if user32.IsWindowVisible(hwnd):
+                n = user32.GetWindowTextLengthW(hwnd)
+                buf = ctypes.create_unicode_buffer(n + 1)
+                user32.GetWindowTextW(hwnd, buf, n + 1)
+                if "chromium" in buf.value.lower():
+                    found[0] = hwnd
+                    return False  # stop enumeration
+            return True
+
+        user32.EnumWindows(EnumCB(_cb), 0)
+        hwnd = found[0]
+        if hwnd:
+            user32.ShowWindow(hwnd, 9)          # SW_RESTORE (un-minimise)
+            # Pressing+releasing Alt lets a background thread steal the foreground
+            user32.keybd_event(0x12, 0, 0, 0)   # VK_MENU down
+            user32.keybd_event(0x12, 0, 2, 0)   # VK_MENU up
+            user32.SetForegroundWindow(hwnd)
+    except Exception:
+        pass
+
+
 def _col_letter(n: int) -> str:
     """Convert 1-based column index to letter(s): 1→A, 26→Z, 27→AA."""
     s = ""
@@ -74,11 +122,15 @@ def _col_letter(n: int) -> str:
 # ---------------------------------------------------------------------------
 
 def _tmp(mfr: str) -> Path:
-    d = Path(__file__).parent.parent / ".tmp"
+    """Return (and create) the per-tool cache directory outside the Tresorit tree."""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    else:
+        base = Path.home() / ".local" / "share"
+    d = base / "upstitch-tools" / "Billbee-Artikelmanager"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
-def config_file(mfr: str)  -> Path: return _tmp(mfr) / f"{mfr}_config.json"
 def session_file(mfr: str) -> Path: return _tmp(mfr) / f"{mfr}_session.json"
 def cache_file(mfr: str)       -> Path: return _tmp(mfr) / f"{mfr}_catalog.json"
 def stock_cache_file(mfr: str) -> Path: return _tmp(mfr) / f"{mfr}_stock.json"
@@ -90,21 +142,23 @@ MAPPING_TAB      = "mapping"
 PRODUCT_LIST_TAB = "ProductList"
 
 
-def _load_config(mfr: str) -> dict:
-    cf = config_file(mfr)
-    if not cf.exists():
-        print(f"[error] No config for '{mfr}'. Run 'setup --manufacturer {mfr} --url URL' first.")
+def _load_config(mfr: str, url_override: str | None = None) -> dict:
+    """Build config from products.yaml (reorderingURL). url_override takes precedence."""
+    import yaml
+    products_yaml = Path(__file__).parent.parent / "mappings" / "products.yaml"
+    with open(products_yaml, encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    mfr_data = data.get("manufacturers", {}).get(mfr)
+    if mfr_data is None:
+        print(f"[error] Manufacturer '{mfr}' not found in products.yaml.")
         sys.exit(1)
-    with open(cf, encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _save_config(mfr: str, url: str):
-    domain = urlparse(url).netloc  # e.g. "b2b.trixie-baby.com"
-    data = {"manufacturer": mfr, "url": url, "domain": domain}
-    with open(config_file(mfr), "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    return data
+    url = url_override or mfr_data.get("reorderingURL")
+    if not url:
+        print(f"[error] No reorderingURL for '{mfr}' in products.yaml.")
+        sys.exit(1)
+    domain = urlparse(url).netloc
+    no_crawl = bool(mfr_data.get("useNoCrawl", False))
+    return {"manufacturer": mfr, "url": url, "domain": domain, "no_crawl": no_crawl}
 
 
 # ---------------------------------------------------------------------------
@@ -166,11 +220,8 @@ def _make_link_filter(domain: str, lang: str | None = None):
 def cmd_setup(mfr: str, url: str | None):
     from playwright.sync_api import sync_playwright
 
-    if url:
-        cfg = _save_config(mfr, url)
-    else:
-        cfg = _load_config(mfr)
-        url = cfg["url"]
+    cfg = _load_config(mfr, url_override=url)
+    url = cfg["url"]
     print(f"Manufacturer : {mfr}")
     print(f"URL          : {url}")
     print(f"Domain       : {cfg['domain']}")
@@ -185,6 +236,7 @@ def cmd_setup(mfr: str, url: str | None):
         page = ctx.new_page()
         page.goto(url)
         page.wait_for_load_state("domcontentloaded")
+        _bring_browser_to_front(page)
 
         _wait(">> Logged in? Press Enter to save session ...")
 
@@ -214,22 +266,42 @@ def _write_to_sheet(mfr: str, products: list[dict]):
 # Explore command
 # ---------------------------------------------------------------------------
 
+_CACHE_MAX_AGE = 2 * 24 * 3600  # 2 days in seconds
+
+
+def _fmt_age(seconds: float) -> str:
+    """Return a human-readable age string like '3h 12m' or '1d 5h'."""
+    h = int(seconds // 3600)
+    if h < 24:
+        return f"{h}h {int((seconds % 3600) // 60)}m"
+    return f"{h // 24}d {h % 24}h"
+
+
 def cmd_explore(mfr: str, refresh: bool, dump_html: bool = False,
                 start_url: str | None = None, no_crawl: bool = False):
     cfg = _load_config(mfr)
     domain   = cfg["domain"]
     site_url = start_url or cfg["url"]   # --url overrides config
+    no_crawl = no_crawl or cfg["no_crawl"]  # CLI flag OR products.yaml useNoCrawl
     cf = cache_file(mfr)
 
-    # ── Serve from cache unless --refresh ───────────────────────────────────
+    # ── Offer cached results if present and fresh (≤ 2 days) ────────────────
     if not refresh and cf.exists():
-        print(f"Loading catalog from cache ({cf}) ...")
-        print(f"  (Use --refresh to re-crawl the site.)")
-        with open(cf, encoding="utf-8") as f:
-            products = json.load(f)
-        print(f"  {len(products)} cached product(s).")
-        _write_to_sheet(mfr, products)
-        return
+        age = time.time() - cf.stat().st_mtime
+        if age < _CACHE_MAX_AGE:
+            with open(cf, encoding="utf-8") as fh:
+                cached = json.load(fh)
+            ans = input(
+                f"Cached product list found ({_fmt_age(age)} old, {len(cached)} products).\n"
+                f"Use cached list? [y/n] "
+            ).strip().lower()
+            if ans != "n":
+                print(f"  Using cached list ({len(cached)} products).")
+                _write_to_sheet(mfr, cached)
+                return
+            print("  Re-scraping from the supplier's website ...")
+        else:
+            print(f"  Cache is {_fmt_age(age)} old (> 2 days) — re-scraping.")
 
     sf = session_file(mfr)
     if not sf.exists():
@@ -286,6 +358,7 @@ def cmd_explore(mfr: str, refresh: bool, dump_html: bool = False,
             page.wait_for_load_state("networkidle", timeout=15000)
         except Exception:
             pass
+        _bring_browser_to_front(page)
 
         # Bail out if session expired (login form reappeared)
         if page.query_selector("input[type=password]"):
@@ -947,7 +1020,6 @@ def cmd_order(mfr: str, dry_run: bool, factor: float = 1.0, cached: bool = False
     from google_sheets_client import read_tab, read_tab_visible
     from billbee_client import BillbeeClient
 
-    cfg = _load_config(mfr)
     sf  = session_file(mfr)
     if not sf.exists():
         print(f"[error] No session for '{mfr}'. Run 'setup' first.")
@@ -987,7 +1059,7 @@ def cmd_order(mfr: str, dry_run: bool, factor: float = 1.0, cached: bool = False
 
     # ── 2. Load sheet data ────────────────────────────────────────────────────
     sname = sheet_name(mfr)
-    print(f"\nLoading data from '{sname}' ...")
+    print(f"\nReading catalog and product list from '{sname}' ...")
     ss = open_sheet_by_name(sname)
 
     # B2B Catalog → EAN → {Name, Price, URL}
@@ -1056,11 +1128,23 @@ def cmd_order(mfr: str, dry_run: bool, factor: float = 1.0, cached: bool = False
     n_with_qty = sum(1 for r in order_rows if r["Qty"])
     print(f"  {len(order_rows)} physical products | {n_with_qty} need reordering.")
 
+    if not order_rows:
+        print("[warn] No physical products with EAN found in ProductList.")
+        print("       Run 'map' first to assign EANs from the B2B catalog, then retry.")
+        return
+
     # ── 2. Write to {MFR} Orders sheet ───────────────────────────────────────
     oname = orders_sheet_name(mfr)
     tab   = f"Order {date.today().isoformat()}"
-    print(f"\nWriting order to '{oname}' / '{tab}' ...")
-    oss = open_sheet_by_name(oname)
+    print(f"\nWriting order tab '{tab}' to '{oname}' ...")
+    try:
+        oss = open_sheet_by_name(oname)
+    except Exception as _e:
+        import gspread as _gs
+        if not isinstance(_e, _gs.exceptions.SpreadsheetNotFound):
+            raise
+        print(f"  Sheet '{oname}' not found — creating it ...")
+        oss = create_sheet(oname)
     write_tab(oss, tab, order_rows)
 
     # Add checkbox data validation to "add to Billbee stock" column
@@ -1090,8 +1174,41 @@ def cmd_order(mfr: str, dry_run: bool, factor: float = 1.0, cached: bool = False
         print("[DRY-RUN] Cart filling skipped.")
         return
 
-    # ── 4. Re-read visible rows (user may have changed Qty in the sheet) ──────
-    # Re-open by spreadsheet ID (not name) so we always get the exact same sheet.
+    _do_cart_fill(mfr, tab, orders_sheet_id, order_rows)
+
+    # (cart filling handed off to _do_cart_fill)
+
+
+# ---------------------------------------------------------------------------
+# Cart-fill helper — shared by cmd_order and cmd_fill_cart
+# ---------------------------------------------------------------------------
+
+def _do_cart_fill(mfr: str, tab: str, orders_sheet_id: str,
+                  order_rows: list[dict]) -> None:
+    """
+    Re-read the visible rows from an order tab, fill the cart via the browser,
+    write actual cart quantities back to the sheet, then offer to update Billbee stock.
+
+    Called by cmd_order (after writing the order tab) and cmd_fill_cart (standalone).
+    """
+    from google_sheets_client import read_tab, read_tab_visible
+    from playwright.sync_api import sync_playwright, Error as _PWError
+
+    sf = session_file(mfr)
+
+    # ── Column indices from order_rows for sheet write-back ──────────────────
+    _order_headers = list(order_rows[0].keys()) if order_rows else []
+    _qty_col  = (_order_headers.index("Qty")  + 1) if "Qty"  in _order_headers else None
+    _cost_col = (_order_headers.index("Cost") + 1) if "Cost" in _order_headers else None
+
+    # EAN → (sheet_row_1based, original_row)
+    _ean_to_info = {
+        str(r.get("EAN") or ""): (i, r)
+        for i, r in enumerate(order_rows, start=2)
+        if str(r.get("EAN") or "").strip()
+    }
+
+    # ── Re-read visible rows (user may have changed Qty in the sheet) ────────
     oss = open_sheet(orders_sheet_id)
     to_order = [
         r for r in read_tab_visible(oss, tab)
@@ -1102,26 +1219,13 @@ def cmd_order(mfr: str, dry_run: bool, factor: float = 1.0, cached: bool = False
         print("No visible rows with Qty + URL. Nothing to add to cart.")
         return
 
-    # ── 5. Browser: fill cart → navigate to cart → scrape → write back ──────
     print(f"\nOpening browser to fill cart for {len(to_order)} item(s) ...")
-    from playwright.sync_api import sync_playwright, Error as _PWError
-
-    # Column indices in the order tab (1-based) for write-back
-    _order_headers = list(order_rows[0].keys())
-    _qty_col  = (_order_headers.index("Qty")   + 1) if "Qty"   in _order_headers else None
-    _cost_col = (_order_headers.index("Cost")  + 1) if "Cost"  in _order_headers else None
-
-    # EAN → (sheet_row_1based, original_row) for write-back
-    _ean_to_info = {
-        str(r.get("EAN") or ""): (i, r)
-        for i, r in enumerate(order_rows, start=2)
-        if str(r.get("EAN") or "").strip()
-    }
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=False, slow_mo=50)
         ctx     = browser.new_context(storage_state=str(sf))
         page    = ctx.new_page()
+        _brought_to_front = False
 
         # ── Step 1: fill cart ─────────────────────────────────────────────────
         for item in to_order:
@@ -1136,6 +1240,9 @@ def cmd_order(mfr: str, dry_run: bool, factor: float = 1.0, cached: bool = False
                     page.wait_for_load_state("networkidle", timeout=5000)
                 except Exception:
                     pass
+                if not _brought_to_front:
+                    _bring_browser_to_front(page)
+                    _brought_to_front = True
 
                 qty_sel = (
                     page.query_selector(f"article[data-product-id='{ean}'] input[type='number']")
@@ -1331,6 +1438,55 @@ def cmd_order(mfr: str, dry_run: bool, factor: float = 1.0, cached: bool = False
 
 
 # ---------------------------------------------------------------------------
+# Fill-cart command — standalone re-run of the cart-fill step
+# ---------------------------------------------------------------------------
+
+def cmd_fill_cart(mfr: str, tab: str | None) -> None:
+    """
+    Open an existing order tab in '{MFR} Orders' and fill the cart — without
+    re-fetching Billbee stock, re-writing the order tab, etc.
+
+    If --tab is omitted, uses the most recent 'Order YYYY-MM-DD' tab.
+    """
+    import webbrowser
+    from google_sheets_client import read_tab
+
+    sf = session_file(mfr)
+    if not sf.exists():
+        print(f"[error] No session for '{mfr}'. Run 'setup' first.")
+        sys.exit(1)
+
+    oname = orders_sheet_name(mfr)
+    print(f"Opening '{oname}' ...")
+    oss = open_sheet_by_name(oname)
+    orders_sheet_id = oss.id
+
+    if not tab:
+        tab_names = [ws.title for ws in oss.worksheets()]
+        order_tabs = sorted(
+            [t for t in tab_names if t.startswith("Order 20")],
+            reverse=True,
+        )
+        if not order_tabs:
+            print(f"[error] No 'Order YYYY-MM-DD' tabs found in '{oname}'.")
+            sys.exit(1)
+        tab = order_tabs[0]
+        print(f"  Using most recent tab: '{tab}'")
+
+    order_rows = read_tab(oss, tab)
+    if not order_rows:
+        print(f"[error] Tab '{tab}' is empty.")
+        sys.exit(1)
+
+    print(f"  {len(order_rows)} rows in '{tab}'.")
+    webbrowser.open(oss.url)
+    print(f"\nSheet open. Adjust quantities if needed, then press Enter.")
+    _wait(">> Press Enter to open the browser and fill the cart ...")
+
+    _do_cart_fill(mfr, tab, orders_sheet_id, order_rows)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -1385,6 +1541,13 @@ def main():
     asp.add_argument("--tab", required=True,
                      help="Order tab name, e.g. 'Order 2026-03-08'.")
 
+    # fill-cart
+    fcp = sub.add_parser("fill-cart",
+                         help="Re-run the cart-fill step for an existing order tab.")
+    fcp.add_argument("--manufacturer", required=True, metavar="MFR")
+    fcp.add_argument("--tab", default=None,
+                     help="Order tab name (default: most recent 'Order YYYY-MM-DD' tab).")
+
     args = parser.parse_args()
     mfr  = args.manufacturer.upper()
 
@@ -1399,6 +1562,8 @@ def main():
         cmd_order(mfr, dry_run=args.dry_run, factor=args.factor, cached=args.cached)
     elif args.command == "add-stock":
         cmd_add_stock(mfr, args.tab)
+    elif args.command == "fill-cart":
+        cmd_fill_cart(mfr, args.tab)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ First run opens a browser for authorization; subsequent runs use the cached toke
 
 import os
 import re
+import time
 from pathlib import Path
 
 import gspread
@@ -17,6 +18,22 @@ from dotenv import load_dotenv
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
+
+
+def _retry(fn, *args, retries: int = 4, **kwargs):
+    """Call fn(*args, **kwargs), retrying on transient Google API errors (503/429)."""
+    delay = 5.0
+    for attempt in range(retries):
+        try:
+            return fn(*args, **kwargs)
+        except gspread.exceptions.APIError as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status in (429, 500, 503) and attempt < retries - 1:
+                print(f"  [Google API {status}] retrying in {delay:.0f}s ...")
+                time.sleep(delay)
+                delay = min(delay * 2, 60)
+            else:
+                raise
 
 # Load credentials path from google-client's own .env
 load_dotenv(Path(__file__).parent / ".env")
@@ -63,24 +80,24 @@ def get_client() -> gspread.Client:
 
 def create_sheet(title: str) -> gspread.Spreadsheet:
     """Create a new Google Sheet with the given title and return it."""
-    return get_client().create(title)
+    return _retry(get_client().create, title)
 
 
 def open_sheet(url_or_id: str) -> gspread.Spreadsheet:
     """Open an existing Google Sheet by URL or spreadsheet ID."""
     match = re.search(r"/d/([a-zA-Z0-9_-]+)", url_or_id)
     sheet_id = match.group(1) if match else url_or_id
-    return get_client().open_by_key(sheet_id)
+    return _retry(get_client().open_by_key, sheet_id)
 
 
 def open_sheet_by_name(name: str) -> gspread.Spreadsheet:
     """Open an existing Google Sheet by its exact title in Google Drive."""
-    return get_client().open(name)
+    return _retry(get_client().open, name)
 
 
 def read_tab(spreadsheet: gspread.Spreadsheet, tab_name: str) -> list[dict]:
     """Read all rows from a tab and return as a list of dicts (header row = keys)."""
-    return spreadsheet.worksheet(tab_name).get_all_records()
+    return _retry(spreadsheet.worksheet(tab_name).get_all_records)
 
 
 def read_tab_visible(spreadsheet: gspread.Spreadsheet, tab_name: str) -> list[dict]:
@@ -163,5 +180,5 @@ def write_tab(spreadsheet: gspread.Spreadsheet, tab_name: str, rows: list[dict])
     except gspread.exceptions.WorksheetNotFound:
         ws = spreadsheet.add_worksheet(title=tab_name, rows=len(matrix) + 10, cols=len(headers))
 
-    ws.update(matrix, value_input_option="USER_ENTERED")
+    _retry(ws.update, matrix, value_input_option="USER_ENTERED")
     print(f"[ok] Wrote {len(rows)} rows to tab '{tab_name}'.")

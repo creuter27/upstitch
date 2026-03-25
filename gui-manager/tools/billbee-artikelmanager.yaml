@@ -54,6 +54,10 @@ functions:
   - name: "Check Titles"
     command: ".venv/bin/python execution/check_title_vs_fields.py"
     description: "Validate product titles match SKU attributes"
+panels:
+  - id: inventory
+    name: Lagerbestand
+    panel_type: inventory
 file_tree:
   - mappings/
 permissions_required:

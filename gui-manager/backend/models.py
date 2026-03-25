@@ -42,3 +42,15 @@ class FileContent(BaseModel):
 class PackagingUpdate(BaseModel):
     comboKey: str
     name: str
+
+
+class StockQueryRequest(BaseModel):
+    products: list[dict]  # [{sku, billbeeId}]
+
+
+class StockUpdateRequest(BaseModel):
+    sku: str
+    billbeeId: int
+    delta: Optional[float] = None
+    newQuantity: Optional[float] = None
+    reason: str = "GUI: manual stock correction"

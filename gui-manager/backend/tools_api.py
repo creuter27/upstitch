@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from auth import get_current_user
 from db import User
-from models import PackagingUpdate
+from models import PackagingUpdate, StockQueryRequest, StockUpdateRequest
 
 router = APIRouter()
 
@@ -301,6 +301,195 @@ def update_packaging(
     with open(mapping_file, "w", encoding="utf-8") as f:
         json.dump(raw_mappings, f, indent=2, ensure_ascii=False)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Inventory helpers
+# ---------------------------------------------------------------------------
+
+
+def _run_tool_script(python: str, script: str, args: list[str], timeout: int = 120) -> dict:
+    """Run a tool's Python script and return parsed JSON from stdout."""
+    result = subprocess.run(
+        [python, script] + args,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or "Script exited with non-zero status"
+        raise HTTPException(status_code=500, detail=detail)
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        snippet = result.stdout[:300]
+        raise HTTPException(status_code=500, detail=f"Script output parse error: {exc} | output: {snippet}")
+
+
+# ---------------------------------------------------------------------------
+# Inventory endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/tools/{tool_id}/inventory/manufacturers")
+def get_inventory_manufacturers(
+    tool_id: str,
+    current_user: User = Depends(get_current_user),
+) -> list[str]:
+    """Return all manufacturer codes defined in mappings/products.yaml."""
+    manifest = get_tool_by_id(tool_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_id}' not found")
+    tool_path = resolve_tool_path(manifest.get("path", ""))
+    products_yaml = os.path.join(tool_path, "mappings", "products.yaml")
+    if not os.path.exists(products_yaml):
+        return []
+    with open(products_yaml, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    return list((data.get("manufacturers") or {}).keys())
+
+
+@router.get("/api/tools/{tool_id}/inventory/products")
+def get_inventory_products(
+    tool_id: str,
+    manufacturers: str = "",
+    category: str = "",
+    size: str = "",
+    color: str = "",
+    variant: str = "",
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Load non-BOM products from the manufacturers' Google Sheets.
+
+    Query params:
+      manufacturers  Comma-separated manufacturer codes (default: all from products.yaml)
+      category       Filter by Produktkategorie (substring, optional)
+      size           Filter by Produktgröße (substring, optional)
+      color          Filter by Produktfarbe (substring, optional)
+      variant        Filter by Produktvariante (substring, optional)
+
+    Returns {"products": [...], "errors": [...]}.
+    """
+    manifest = get_tool_by_id(tool_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_id}' not found")
+    tool_path = resolve_tool_path(manifest.get("path", ""))
+    python = get_external_python(tool_path)
+    script = os.path.join(tool_path, "execution", "gui_read_sheet_products.py")
+
+    mfr_codes = [m.strip() for m in manufacturers.split(",") if m.strip()]
+    if not mfr_codes:
+        raise HTTPException(status_code=400, detail="At least one manufacturer code required")
+
+    args = ["--manufacturers"] + mfr_codes
+    if category: args += ["--category", category]
+    if size:     args += ["--size",     size]
+    if color:    args += ["--color",    color]
+    if variant:  args += ["--variant",  variant]
+
+    return _run_tool_script(python, script, args, timeout=120)
+
+
+@router.get("/api/tools/{tool_id}/inventory/products/billbee")
+def get_inventory_products_billbee(
+    tool_id: str,
+    manufacturers: str = "",
+    category: str = "",
+    size: str = "",
+    color: str = "",
+    variant: str = "",
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Load non-BOM products directly from the Billbee API for the given manufacturers.
+
+    Query params:
+      manufacturers  Comma-separated manufacturer codes (required)
+      category       Filter by Produktkategorie (substring, optional)
+      size           Filter by Produktgröße (substring, optional)
+      color          Filter by Produktfarbe (substring, optional)
+      variant        Filter by Produktvariante (substring, optional)
+
+    Returns {"products": [...], "errors": [...]}.
+    """
+    manifest = get_tool_by_id(tool_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_id}' not found")
+    tool_path = resolve_tool_path(manifest.get("path", ""))
+    python = get_external_python(tool_path)
+    script = os.path.join(tool_path, "execution", "gui_read_billbee_products.py")
+
+    mfr_codes = [m.strip() for m in manufacturers.split(",") if m.strip()]
+    if not mfr_codes:
+        raise HTTPException(status_code=400, detail="At least one manufacturer code required")
+
+    args = ["--manufacturers"] + mfr_codes
+    if category: args += ["--category", category]
+    if size:     args += ["--size",     size]
+    if color:    args += ["--color",    color]
+    if variant:  args += ["--variant",  variant]
+
+    # Allow extra time — iterates full catalog
+    return _run_tool_script(python, script, args, timeout=300)
+
+
+@router.post("/api/tools/{tool_id}/inventory/stock/query")
+def query_inventory_stock(
+    tool_id: str,
+    body: StockQueryRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Fetch live stock levels from Billbee for the given products.
+
+    Body: {"products": [{"sku": "...", "billbeeId": 12345}, ...]}
+    Returns {"stocks": {"SKU": {"stock": N, "stockId": N}}, "errors": [...]}.
+
+    Note: rate-limited at ~0.6 s/product; allow extra time for large lists.
+    """
+    manifest = get_tool_by_id(tool_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_id}' not found")
+    tool_path = resolve_tool_path(manifest.get("path", ""))
+    python = get_external_python(tool_path)
+    script = os.path.join(tool_path, "execution", "gui_get_stock.py")
+
+    products_json = json.dumps(body.products)
+    # Allow 1 s per product plus 10 s overhead, minimum 30 s
+    timeout = max(30, len(body.products) * 1 + 10)
+    return _run_tool_script(python, script, ["--products", products_json], timeout=timeout)
+
+
+@router.post("/api/tools/{tool_id}/inventory/stock/update")
+def update_inventory_stock(
+    tool_id: str,
+    body: StockUpdateRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Update the stock level for a single SKU in Billbee.
+
+    Body: {sku, billbeeId, delta?, newQuantity?, reason?}
+    Exactly one of delta or newQuantity must be provided.
+    Returns {"ok": true, "sku": "...", "previousStock": N, "newStock": N}.
+    """
+    if body.delta is None and body.newQuantity is None:
+        raise HTTPException(status_code=400, detail="Provide delta or newQuantity")
+    manifest = get_tool_by_id(tool_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_id}' not found")
+    tool_path = resolve_tool_path(manifest.get("path", ""))
+    python = get_external_python(tool_path)
+    script = os.path.join(tool_path, "execution", "gui_update_stock.py")
+
+    args = ["--sku", body.sku, "--billbee-id", str(body.billbeeId), "--reason", body.reason]
+    if body.delta is not None:
+        args += ["--delta", str(body.delta)]
+    else:
+        args += ["--new-quantity", str(body.newQuantity)]
+
+    return _run_tool_script(python, script, args, timeout=30)
 
 
 @router.get("/api/tools/{tool_id}/filetree")

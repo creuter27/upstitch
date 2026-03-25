@@ -121,6 +121,21 @@ export default function TerminalPanel() {
       }
     })
 
+    // Ctrl-C: copy selection if text is selected; otherwise send \x03 (interrupt)
+    // Ctrl-V: paste clipboard text into terminal
+    term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      if (e.type !== 'keydown') return true
+      if (e.ctrlKey && e.key === 'c' && term.hasSelection()) {
+        navigator.clipboard.writeText(term.getSelection()).catch(() => {})
+        return false
+      }
+      if (e.ctrlKey && e.key === 'v') {
+        navigator.clipboard.readText().then((text) => sendToTerminal(text)).catch(() => {})
+        return false
+      }
+      return true
+    })
+
     // ResizeObserver to auto-fit
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit()

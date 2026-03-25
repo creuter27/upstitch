@@ -17,6 +17,7 @@ Usage (standalone):
 
 import argparse
 import json
+import re
 import sys
 import traceback
 from datetime import datetime, timedelta, timezone
@@ -40,6 +41,11 @@ OUTPUT_DIR_KEYS = {
     "delivery-note": "output_dir_delivery_note",
 }
 
+# Amazon order number format: 302-1234567-7654321
+_AMAZON_ORDER_RE = re.compile(r"^\d{3}-\d{7}-\d{7}$")
+_AMAZON_SC_URL = "https://sellercentral.amazon.de/orders-v3/order/{}"
+_MISSING_STATE_FILE = PROJECT_ROOT / "logs" / "missing_documents.json"
+
 STATUS_DISPLAY = {
     "downloaded":          "downloaded",
     "downloaded (Amazon)": "downloaded (Amazon)",
@@ -53,6 +59,23 @@ STATUS_DISPLAY = {
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def print_missing_amazon_links(missing_order_numbers: list[str]) -> None:
+    """Print Seller Central links for missing Amazon orders and save state for run_labels."""
+    amazon = sorted(n for n in missing_order_numbers if _AMAZON_ORDER_RE.match(n))
+    if amazon:
+        print(f"\nMissing documents — {len(amazon)} Amazon order(s):")
+        for on in amazon:
+            url = _AMAZON_SC_URL.format(on)
+            print(f"  {on}  {url}")
+    # Always write state file (even empty list) so run_labels.py knows fetch ran
+    _MISSING_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _MISSING_STATE_FILE.write_text(
+        json.dumps({"missing": list(missing_order_numbers), "ts": datetime.now().isoformat()},
+                   ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
 
 def load_config(path: Path) -> dict:
     with open(path, "r", encoding="utf-8") as f:
@@ -363,6 +386,12 @@ def run_google_drive(cfg: dict, dry_run: bool, min_date: str,
             stats["ok"] += amazon_downloaded
 
     print(f"\nDone. saved={stats['ok']}  skipped={stats['skipped']}  errors={stats['errors']}")
+
+    missing_order_numbers = [
+        r["order_number"] for r in results.values()
+        if any((r.get(dt) or {}).get("status") == "missing" for dt in ("invoice", "delivery-note"))
+    ]
+    print_missing_amazon_links(missing_order_numbers)
     return stats["errors"], list(results.values())
 
 
@@ -428,6 +457,7 @@ def run_billbee(cfg: dict, dry_run: bool, min_date: str,
         print()
 
     stats = {"ok": 0, "skipped": 0, "errors": 0}
+    missing_order_numbers: list[str] = []
 
     doc_tasks = []
     if fetch_invoice:
@@ -439,6 +469,7 @@ def run_billbee(cfg: dict, dry_run: bool, min_date: str,
         billbee_id = order.get("BillBeeOrderId")
         order_number = order.get("OrderNumber") or order.get("Id") or str(billbee_id)
         print(f"\n  Order {order_number} (BillBeeOrderId={billbee_id})")
+        order_has_missing = False
 
         for doc_type, fetch_fn in doc_tasks:
             output_dir = resolve_output_dir(cfg, doc_type)
@@ -463,6 +494,7 @@ def run_billbee(cfg: dict, dry_run: bool, min_date: str,
                 if pdf_bytes is None:
                     print(f"    [{doc_type}] no document yet in Billbee — skip")
                     stats["skipped"] += 1
+                    order_has_missing = True
                     continue
                 write_pdf(pdf_bytes, dest)
                 print(f"    [{doc_type}] saved  {dest.name}  ({len(pdf_bytes):,} bytes)")
@@ -472,7 +504,11 @@ def run_billbee(cfg: dict, dry_run: bool, min_date: str,
                 traceback.print_exc()
                 stats["errors"] += 1
 
+        if order_has_missing:
+            missing_order_numbers.append(order_number)
+
     print(f"\nDone. saved={stats['ok']}  skipped={stats['skipped']}  errors={stats['errors']}")
+    print_missing_amazon_links(missing_order_numbers)
     return stats["errors"]
 
 

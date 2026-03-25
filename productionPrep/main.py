@@ -20,9 +20,14 @@ Usage:
 """
 
 import argparse
-import readline
 import re
 import sys
+
+try:
+    import readline as _readline
+    _HAS_READLINE = True
+except ImportError:
+    _HAS_READLINE = False  # Windows — no prefill, but input still works
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -53,7 +58,7 @@ from execution import feedback_store
 from execution import product_cache as _product_cache
 from execution.resolve_order_items import resolve_items
 from execution.package_type_store import (
-    fetch_package_types, combo_key, get_for_combo, set_for_combo,
+    fetch_package_types, combo_key, get_for_combo, set_for_combo, KEINE_PKG_TYPE,
 )
 
 # Load project-specific vars (OPENCAGE_API_KEY, ANTHROPIC_API_KEY) from this project's .env.
@@ -105,6 +110,17 @@ _ORDER_STATE_NAMES = {
     6: "Geloescht (deleted)",
     8: "Storniert (cancelled)",
 }
+
+_CUSTOM_ORDER_SKU_PREFIX = "custom-order"
+
+
+def _is_custom_order(order: dict) -> bool:
+    """Return True if any order item SKU starts with 'custom-order'."""
+    for item in (order.get("OrderItems") or []):
+        sku = ((item.get("Product") or {}).get("SKU") or "").strip()
+        if sku.lower().startswith(_CUSTOM_ORDER_SKU_PREFIX):
+            return True
+    return False
 
 
 _PENDING_CASES_FILE = Path(__file__).parent / "tests" / "pending_cases.yaml"
@@ -382,6 +398,23 @@ def _order_name_flag(order: dict) -> tuple[str, str]:
     return name, flag
 
 
+def _maps_url(addr: dict) -> str:
+    """Build a Google Maps search URL for the given address."""
+    from urllib.parse import quote_plus
+    street_hn = f"{(addr.get('Street') or '')} {(addr.get('HouseNumber') or '')}".strip()
+    parts = [p for p in [
+        street_hn,
+        addr.get("AddressAddition") or "",
+        addr.get("Zip") or "",
+        addr.get("City") or "",
+        addr.get("CountryISO2") or "",
+    ] if p]
+    query = ", ".join(parts)
+    if not query:
+        return ""
+    return f"https://www.google.com/maps/search/?api=1&query={quote_plus(query)}"
+
+
 def _display_order_header(order: dict, idx: int = 0, total: int = 0) -> None:
     name, flag = _order_name_flag(order)
     order_num = order.get("OrderNumber") or order.get("Id") or "?"
@@ -391,6 +424,10 @@ def _display_order_header(order: dict, idx: int = 0, total: int = 0) -> None:
         f"{counter}[bold cyan]Order #{order_num}[/]  [white]{name}[/]  {flag}",
         style="cyan",
     )
+    addr = order.get("ShippingAddress", {})
+    url = _maps_url(addr)
+    if url:
+        console.print(f"  [dim]Maps: [link={url}]{url}[/link][/]")
 
 
 def _display_address_table(original: dict, suggested: dict) -> None:
@@ -482,13 +519,16 @@ def _display_geocode_components(geo: dict | None) -> None:
     console.print(table)
 
 
-def _prompt_choice(default: str = "s") -> str:
-    """Prompt user for action. Returns 'y', 'n', 'e', 's', or 'q'."""
+def _prompt_choice(addr: dict, default: str = "s") -> str:
+    """Prompt user for action. Returns 'a', 'n', 'e', 's', or 'q'."""
+    url = _maps_url(addr)
+    if url:
+        console.print(f"  [dim]Maps: [link={url}]{url}[/link][/]")
     console.print()
     raw = Prompt.ask(
-        "  [bold green]\\[y][/] Accept  [bold red]\\[n][/] Reject  "
+        "  [bold green]\\[a][/] Accept  [bold red]\\[n][/] Reject  "
         "[bold yellow]\\[e][/] Edit  [bold dim]\\[s][/] Skip  [bold dim]\\[q][/] Quit",
-        choices=["y", "n", "e", "s", "q"],
+        choices=["a", "n", "e", "s", "q"],
         default=default,
     )
     return raw.lower()
@@ -497,17 +537,25 @@ def _prompt_choice(default: str = "s") -> str:
 def _input_with_prefill(prompt: str, prefill: str) -> str:
     """Show a prompt with the current value pre-filled so the user can edit it in-place.
 
-    Uses readline pre-input hook so Ctrl-C/Ctrl-V copy-paste work normally.
-    Enter with no change keeps the prefilled value; entering '-' clears the field.
+    On macOS/Linux uses readline so Ctrl-C/Ctrl-V copy-paste work normally.
+    On Windows (no readline) falls back to plain input() — prefill is shown in
+    the prompt text instead so the user can still see the current value.
+    Entering '-' clears the field; Enter with no change keeps the prefilled value.
     """
-    def _hook():
-        readline.insert_text(prefill)
-        readline.redisplay()
-    readline.set_pre_input_hook(_hook)
-    try:
-        result = input(prompt)
-    finally:
-        readline.set_pre_input_hook(None)
+    if _HAS_READLINE:
+        def _hook():
+            _readline.insert_text(prefill)
+            _readline.redisplay()
+        _readline.set_pre_input_hook(_hook)
+        try:
+            result = input(prompt)
+        finally:
+            _readline.set_pre_input_hook(None)
+    else:
+        # Windows fallback: show current value in brackets, empty input = keep
+        display = f"{prompt}[{prefill}] " if prefill else prompt
+        raw = input(display)
+        result = raw if raw else prefill
     # A lone "-" means "clear this field"
     if result == "-":
         return ""
@@ -651,12 +699,15 @@ def _apply_with_verification(
                 f"\n  [yellow]{_WARN} Geocode confidence still low after fix — "
                 "address may still be incorrect.[/]"
             )
+        url = _maps_url({**addr, **fix})
+        if url:
+            console.print(f"  [dim]Maps: [link={url}]{url}[/link][/]")
         console.print()
         raw = Prompt.ask(
-            "  Confirm?  [bold green]\\[y][/] Queue  "
+            "  Confirm?  [bold green]\\[a][/] Queue  "
             "[bold yellow]\\[e][/] Edit  [bold dim]\\[s][/] Skip",
-            choices=["y", "e", "s"],
-            default="y",
+            choices=["a", "e", "s"],
+            default="a",
         ).lower()
         if raw == "s":
             return "skipped"
@@ -694,6 +745,12 @@ def _is_street_normalization(original: str, suggested: str) -> bool:
         return s
 
     return bool(original) and bool(suggested) and _norm(original) == _norm(suggested)
+
+
+def _municipality_similarity(a: str, b: str) -> float:
+    """Case-insensitive similarity ratio between two strings (0.0–1.0)."""
+    from difflib import SequenceMatcher
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
 
 def _geocode_suggestion(addr: dict, geo: dict | None,
@@ -747,6 +804,7 @@ def _geocode_suggestion(addr: dict, geo: dict | None,
             fix["City"] = city
             if orig_city and not (addr.get("AddressAddition") or "").strip():
                 orig_lower = orig_city.lower()
+                # Check if orig_city matches a sub-locality (e.g. district in formatted)
                 matched_sublocality = next(
                     (
                         (components.get(k) or "").strip()
@@ -758,6 +816,20 @@ def _geocode_suggestion(addr: dict, geo: dict | None,
                 )
                 if matched_sublocality:
                     fix["AddressAddition"] = matched_sublocality
+                else:
+                    # Check if orig_city IS (or is a slight misspelling of) the
+                    # municipality — customer entered the parent admin area instead
+                    # of the specific town.  Preserve it in Addition.
+                    # Use the official municipality spelling in AddressAddition.
+                    municipality = (components.get("municipality") or "").strip()
+                    if municipality:
+                        sim = _municipality_similarity(municipality, orig_city)
+                        if sim >= 0.85:
+                            # Exact or near-exact match → confidently a municipality
+                            fix["AddressAddition"] = municipality
+                        elif sim >= 0.65 and geo.get("confidence", 0) >= 9:
+                            # Probable match with high geocode confidence → accept
+                            fix["AddressAddition"] = municipality
 
     return fix
 
@@ -854,6 +926,50 @@ def _deterministic_suggestion(addr: dict, issues: list) -> dict:
     return fix
 
 
+def _prompt_package_type_custom(
+    order_id, order_number: str, order: dict, pkg_types: list[dict]
+) -> str:
+    """
+    Always show the package type selection for a custom order.
+    The list includes 'Keine => kein Versand' for orders that need no label.
+    The chosen type is queued but NOT saved to the combo mapping
+    (custom orders are one-offs, not repeating product combos).
+    Returns 'set' or 'skipped'.
+    """
+    if not pkg_types:
+        console.print(
+            f"  [yellow]{_e('📦', 'PKG')} Custom order — no package types configured.[/]\n"
+            "  Edit data/package_types.yaml and rerun."
+        )
+        return "skipped"
+
+    console.print(f"\n  [yellow]{_e('📦', 'PKG')} Custom order — select package type:[/]")
+    for i, pt in enumerate(pkg_types, 1):
+        console.print(f"    [[bold]{i}[/]] {pt['name']}")
+    console.print(f"    [[dim]s[/]] Skip")
+    console.print()
+
+    while True:
+        raw = Prompt.ask("  Choice", default="s")
+        if raw.lower() == "s":
+            return "skipped"
+        try:
+            idx = int(raw) - 1
+            if 0 <= idx < len(pkg_types):
+                chosen = pkg_types[idx]
+                break
+        except ValueError:
+            pass
+        console.print("  [red]Invalid choice — enter a number or 's'[/]")
+
+    _queue_package_type(order_id, order_number, order,
+                        pkg_id=chosen.get("id"), pkg_name=chosen["name"])
+    console.print(
+        f"  [green]{_OK} Package type:[/] [bold]{chosen['name']}[/]"
+    )
+    return "set"
+
+
 def process_order(
     order: dict,
     skip_geocode: bool,
@@ -877,10 +993,12 @@ def process_order(
     addr = order.get("ShippingAddress", {})
     order_id = order.get("BillBeeOrderId") or order.get("Id")
     order_number = order.get("OrderNumber") or str(order_id)
+    is_custom = _is_custom_order(order)
 
     resolved_items = resolve_items(order, by_id, by_sku, field_defs)
     known_pkg = get_for_combo(resolved_items) if resolved_items else None
-    needs_pkg_prompt = bool(resolved_items) and known_pkg is None
+    # Custom orders always need a manual package type selection
+    needs_pkg_prompt = (bool(resolved_items) and known_pkg is None) or is_custom
 
     issues = check_address(addr)
 
@@ -930,7 +1048,17 @@ def process_order(
                             "CountryISO2": addr.get("CountryISO2", "DE"),
                         })
                         if city_verify and city_verify.get("confidence", 0) >= 8:
-                            del geo_suggestion["City"]
+                            # Suppress the city change only when orig_city is the
+                            # direct town name (exact or near-exact match).
+                            # If orig_city is a parent municipality the similarity
+                            # will be low and we keep the correction.
+                            v_comp = city_verify.get("components", {})
+                            v_town = (
+                                (v_comp.get("city") or v_comp.get("town") or "")
+                            ).strip()
+                            if v_town and _municipality_similarity(v_town, orig_city) >= 0.85:
+                                del geo_suggestion["City"]
+                            # else: orig_city is a municipality → allow the correction
 
                 if geo_suggestion:
                     _auto = False
@@ -952,6 +1080,22 @@ def process_order(
                                 _auto = True
                             elif has_city:
                                 _auto = True
+
+                        # Path B: if a deterministic fix exists, apply it and
+                        # re-geocode. Accept automatically when confidence ≥ 8.
+                        if not _auto and issues:
+                            det_fix = _deterministic_suggestion(addr, issues)
+                            if det_fix:
+                                fixed_addr = {**addr, **det_fix}
+                                geo_fixed = geocode(fixed_addr)
+                                if geo_fixed and geo_fixed.get("confidence", 0) >= 8:
+                                    _auto = True
+                                    geo = geo_fixed
+                                    geo_sugg_fixed = _geocode_suggestion(fixed_addr, geo_fixed,
+                                                                          geo_company=geo_company)
+                                    geo_suggestion = {**det_fix, **geo_sugg_fixed}
+                                    issues = []
+
                     if _auto:
                         geo_auto_apply = True
                     else:
@@ -961,6 +1105,21 @@ def process_order(
                             description=f"OpenCage suggests corrections: {corrections}.",
                             hint="Accept the OpenCage suggestion or edit manually.",
                         ))
+
+                elif issues and not force_manual:
+                    # No geo_suggestion (low original confidence), but a deterministic
+                    # fix exists. Re-geocode the fixed address.
+                    det_fix = _deterministic_suggestion(addr, issues)
+                    if det_fix:
+                        fixed_addr = {**addr, **det_fix}
+                        geo_fixed = geocode(fixed_addr)
+                        if geo_fixed and geo_fixed.get("confidence", 0) >= 8:
+                            geo_auto_apply = True
+                            geo = geo_fixed
+                            geo_sugg_fixed = _geocode_suggestion(fixed_addr, geo_fixed,
+                                                                  geo_company=geo_company)
+                            geo_suggestion = {**det_fix, **geo_sugg_fixed}
+                            issues = []
 
     has_addr_issues = bool(issues)
 
@@ -1040,7 +1199,7 @@ def process_order(
                 "\n  [yellow]No automatic fix available — "
                 "enter [bold]e[/bold] to correct manually.[/]"
             )
-        choice = _prompt_choice(default="e" if not suggestion else "s")
+        choice = _prompt_choice(addr, default="e" if not suggestion else "s")
 
         if choice == "q":
             return "quit", "quit"
@@ -1048,7 +1207,7 @@ def process_order(
         elif choice == "s":
             addr_result = "skipped"
 
-        elif choice == "y":
+        elif choice == "a":
             fix = suggestion if suggestion else _prompt_edit(addr)
             addr_result = _apply_with_verification(
                 addr, fix, suggestion,
@@ -1087,7 +1246,10 @@ def process_order(
                     user_edit=edits,
                 )
 
-    pkg_result = process_package_type(order, order_number, resolved_items, pkg_types)
+    if is_custom:
+        pkg_result = _prompt_package_type_custom(order_id, order_number, order, pkg_types)
+    else:
+        pkg_result = process_package_type(order, order_number, resolved_items, pkg_types)
 
     return addr_result, pkg_result
 

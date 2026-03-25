@@ -227,6 +227,23 @@ export default function ReorderPanel({ toolId }: Props) {
               neue Seite im Sheet anlegen → Artikel in den Warenkorb → Order
             </div>
           </button>
+
+          {/* Step 3b — Fill cart only */}
+          <button
+            onClick={() => run(`${mfr.pythonCmd} execution/b2b_cart.py fill-cart --manufacturer ${mfr.code}`)}
+            className="flex-1 px-3 py-2 rounded font-semibold text-left transition-colors"
+            style={{
+              background: '#1c2a1c',
+              border: '2px solid #2d4a2d',
+              color: '#86efac',
+              minWidth: '140px',
+            }}
+          >
+            <div className="text-xs font-semibold mb-0.5">3b. Warenkorb füllen</div>
+            <div className="text-xs font-normal" style={{ color: 'inherit', opacity: 0.7 }}>
+              letzten Order-Tab erneut in den Warenkorb laden
+            </div>
+          </button>
         </div>
       )}
 

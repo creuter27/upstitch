@@ -24,6 +24,9 @@ import yaml
 MAPPING_FILE = Path(__file__).parent.parent / "data" / "package_type_mapping.json"
 FALLBACK_YAML = Path(__file__).parent.parent / "data" / "package_types.yaml"
 
+# Special package type that signals no shipping label should be created
+KEINE_PKG_TYPE = "Keine => kein Versand"
+
 
 # ---------------------------------------------------------------------------
 # Combo key

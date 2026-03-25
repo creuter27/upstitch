@@ -19,20 +19,30 @@ if errorlevel 1 (
 REM Ensure external dir exists (created by setup_backend.bat, but mkdir is idempotent)
 mkdir "%VENV%" 2>nul
 
-REM Use 'type' to read files from the Tresorit T: drive.
-REM 'type' uses direct file read (CreateFile API) and works on Tresorit virtual drives.
-REM 'copy', 'robocopy', and 'if exist <dir>' all use directory enumeration (FindFirstFile)
-REM which Tresorit blocks -- those commands hang or fail silently on T:.
+REM Copy files from the Tresorit T: drive.
+REM Primary: PowerShell [System.IO.File]::Copy via $env: vars (CopyFile API, no FindFirstFile).
+REM Fallback: 'type' redirect — if file still missing or empty, bail with a clear error.
 echo Copying package.json from T: drive...
-type "%~dp0frontend\package.json" > "%VENV%\package.json"
-if not exist "%VENV%\package.json" (
-    echo ERROR: Failed to copy package.json to %VENV%
+set "PSRC=%~dp0frontend\package.json"
+set "PDST=%VENV%\package.json"
+powershell -NoProfile -Command "[System.IO.File]::Copy($env:PSRC, $env:PDST, $true)" >nul 2>&1
+if not exist "%PDST%" type "%PSRC%" > "%PDST%"
+if not exist "%PDST%" (
+    echo ERROR: Cannot read package.json from %PSRC% - check Tresorit sync.
+    if not defined BATCH_PARENT pause
+    exit /b 1
+)
+for %%A in ("%PDST%") do if %%~zA==0 (
+    echo ERROR: Copied package.json is empty - check Tresorit sync.
     if not defined BATCH_PARENT pause
     exit /b 1
 )
 
 echo Copying package-lock.json from T: drive...
-type "%~dp0frontend\package-lock.json" > "%VENV%\package-lock.json" 2>nul
+set "PSRC=%~dp0frontend\package-lock.json"
+set "PDST=%VENV%\package-lock.json"
+powershell -NoProfile -Command "[System.IO.File]::Copy($env:PSRC, $env:PDST, $true)" >nul 2>&1
+if not exist "%PDST%" type "%PSRC%" > "%PDST%" 2>nul
 
 echo Running npm install in %VENV%...
 cd /d "%VENV%"
@@ -47,6 +57,16 @@ REM Write package-lock.json back to the project (C: -> T: write works fine)
 if exist "%VENV%\package-lock.json" copy "%VENV%\package-lock.json" "%~dp0frontend\" >nul
 del "%VENV%\package.json" 2>nul
 del "%VENV%\package-lock.json" 2>nul
+
+REM Create a symlink frontend\node_modules → external so VS Code / TypeScript can find types.
+REM Requires Developer Mode (same as the frontend-src symlink in start.bat).
+rd "%~dp0frontend\node_modules" 2>nul
+mklink /D "%~dp0frontend\node_modules" "%MODULES%"
+if errorlevel 1 (
+    echo   [warn] Could not create node_modules symlink ^(enable Developer Mode for symlinks^)
+) else (
+    echo Symlink: frontend\node_modules -^> %MODULES%
+)
 
 echo.
 echo Frontend packages installed to: %MODULES%

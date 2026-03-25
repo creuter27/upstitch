@@ -1,0 +1,6 @@
+python-telegram-bot>=21.0
+anthropic>=0.25
+faster-whisper>=1.0   # local Whisper transcription
+python-dotenv
+pyyaml
+requests

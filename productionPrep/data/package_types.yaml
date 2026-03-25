@@ -9,3 +9,4 @@ package_types:
   - name: OP303
   - name: Vogelhauskarton
   - name: Kapu-karton
+  - name: Keine => kein Versand
