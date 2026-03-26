@@ -3,7 +3,7 @@ import { Tool } from './api'
 
 export interface Tab {
   id: string
-  type: 'tool' | 'file' | 'browser' | 'settings' | 'reorder' | 'packaging'
+  type: 'tool' | 'file' | 'browser' | 'settings' | 'reorder' | 'packaging' | 'inventory'
   title: string
   // type-specific
   toolId?: string

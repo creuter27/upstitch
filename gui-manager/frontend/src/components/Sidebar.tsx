@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore } from '../store'
+import { useStore, Tab } from '../store'
 import { getToolFileTree, FileTreeNode, ToolPanel } from '../api'
 
 interface FileTreeProps {
@@ -105,7 +105,7 @@ export default function Sidebar() {
   function openPanelTab(toolId: string, panel: ToolPanel) {
     openTab({
       id: `panel-${toolId}-${panel.id}`,
-      type: panel.panel_type as 'packaging',
+      type: panel.panel_type as Tab['type'],
       title: panel.name,
       toolId,
       panelId: panel.id,
