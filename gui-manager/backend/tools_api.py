@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from auth import get_current_user
 from db import User
-from models import PackagingUpdate, StockQueryRequest, StockUpdateRequest
+from models import PackagingUpdate, StockQueryRequest, StockUpdateRequest, AddStockApplyRequest
 
 router = APIRouter()
 
@@ -234,6 +234,61 @@ def check_sheet_exists(
     except Exception:
         exists = False
     return {"exists": exists}
+
+
+@router.get("/api/tools/{tool_id}/manufacturers/{code}/add-stock-preview")
+def get_add_stock_preview(
+    tool_id: str, code: str, current_user: User = Depends(get_current_user),
+    tab: str = "",
+) -> dict:
+    """
+    Preview Billbee stock update from the newest (or specified) order tab.
+
+    Reads checked rows from '{CODE} Orders / Order YYYY-MM-DD', fetches live
+    Billbee stock, and returns a table of pending changes.
+
+    Returns {"tab": "...", "items": [...], "errors": [...]}.
+    """
+    manifest = get_tool_by_id(tool_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_id}' not found")
+    tool_path = resolve_tool_path(manifest.get("path", ""))
+    python = get_external_python(tool_path)
+    script = os.path.join(tool_path, "execution", "gui_add_stock_preview.py")
+
+    args = ["--manufacturer", code.upper()]
+    if tab:
+        args += ["--tab", tab]
+
+    # Allow ~1 s per item plus overhead; use 300 s cap for unknown list size
+    return _run_tool_script(python, script, args, timeout=300)
+
+
+@router.post("/api/tools/{tool_id}/manufacturers/{code}/add-stock-apply")
+def post_add_stock_apply(
+    tool_id: str,
+    code: str,
+    body: AddStockApplyRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Apply the ordered quantities to Billbee stock.
+
+    Body: {"items": [{"sku": "...", "billbeeId": N, "qty": N}, ...]}
+    Returns {"ok": true, "updated": N, "errors": [...]}.
+    """
+    manifest = get_tool_by_id(tool_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_id}' not found")
+    tool_path = resolve_tool_path(manifest.get("path", ""))
+    python = get_external_python(tool_path)
+    script = os.path.join(tool_path, "execution", "gui_add_stock_apply.py")
+
+    items_json = json.dumps(body.items)
+    timeout = max(30, len(body.items) * 2 + 15)
+    return _run_tool_script(python, script,
+                            ["--manufacturer", code.upper(), "--items", items_json],
+                            timeout=timeout)
 
 
 @router.get("/api/tools/{tool_id}/packaging")
@@ -490,6 +545,67 @@ def update_inventory_stock(
         args += ["--new-quantity", str(body.newQuantity)]
 
     return _run_tool_script(python, script, args, timeout=30)
+
+
+@router.get("/api/tools/{tool_id}/inventory/sheet-tabs")
+def get_inventory_sheet_tabs(
+    tool_id: str,
+    sheet: str = "",
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Return the tab names of a Google Sheet. Returns {"tabs": [...], "error": null|str}."""
+    if not sheet:
+        raise HTTPException(status_code=400, detail="sheet is required")
+    manifest = get_tool_by_id(tool_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_id}' not found")
+    tool_path = resolve_tool_path(manifest.get("path", ""))
+    python = get_external_python(tool_path)
+    script = os.path.join(tool_path, "execution", "gui_sheet_tabs.py")
+    return _run_tool_script(python, script, ["--sheet", sheet], timeout=30)
+
+
+@router.get("/api/tools/{tool_id}/inventory/sheet-import")
+def get_inventory_sheet_import(
+    tool_id: str,
+    sheet: str = "",
+    tab: str = "",
+    sku_col: str = "SKU",
+    qty_col: str = "Qty",
+    manufacturer: str = "",
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Read SKUs + quantities from a Google Sheet tab, resolve Billbee IDs via
+    the manufacturer's ProductList, and fetch live Billbee stock.
+
+    Query params:
+      sheet        Source Google Sheet name (required)
+      tab          Source tab name (required)
+      sku_col      Column name for SKU (default: SKU)
+      qty_col      Column name for quantity (default: Qty)
+      manufacturer Manufacturer code for ProductList lookup (required)
+
+    Returns {"items": [{sku, billbeeId, billbeeStock, qty}], "errors": [...]}.
+    """
+    if not sheet or not tab or not manufacturer:
+        raise HTTPException(status_code=400, detail="sheet, tab and manufacturer are required")
+    manifest = get_tool_by_id(tool_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_id}' not found")
+    tool_path = resolve_tool_path(manifest.get("path", ""))
+    python = get_external_python(tool_path)
+    script = os.path.join(tool_path, "execution", "gui_sheet_import.py")
+
+    args = [
+        "--sheet", sheet,
+        "--tab", tab,
+        "--sku-col", sku_col,
+        "--qty-col", qty_col,
+        "--manufacturer", manufacturer,
+    ]
+    # Allow ~1 s per expected item plus overhead; cap at 300 s
+    return _run_tool_script(python, script, args, timeout=300)
 
 
 @router.get("/api/tools/{tool_id}/filetree")

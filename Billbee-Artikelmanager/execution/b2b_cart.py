@@ -1001,11 +1001,54 @@ def cmd_add_stock(mfr: str, tab: str) -> None:
         print("No rows checked for Billbee stock update (or Billbee Ids missing).")
         return
 
-    print(f"\n{len(to_update)} item(s) to add to Billbee stock:")
-    for r in to_update:
-        print(f"  {r.get('SKU', '?')}  qty={r.get('Qty', '?')}  billbee_id={r.get('Billbee Id', '?')}")
+    # ── Fetch live Billbee stock for preview table ────────────────────────────
+    from billbee_client import BillbeeClient as _BBC
 
-    ans = input("\n>> Confirm adding to Billbee stock? [Enter = yes, q = cancel] ")
+    print(f"\nFetching live Billbee stock for {len(to_update)} item(s) ...")
+    _client = _BBC()
+    preview: list[dict] = []
+    for r in to_update:
+        _sku      = str(r.get("SKU") or "").strip()
+        _bid      = str(r.get("Billbee Id") or "").strip()
+        try:
+            _qty = int(float(str(r.get("Qty") or "0")))
+        except (ValueError, TypeError):
+            _qty = 0
+        try:
+            _sc = int(round(float(str(r.get("Stock current") or "0") or "0")))
+        except (ValueError, TypeError):
+            _sc = None
+        try:
+            _st = int(round(float(str(r.get("Stock target") or "0") or "0")))
+        except (ValueError, TypeError):
+            _st = None
+        try:
+            _prod   = _client.get_product_by_id(int(_bid))
+            _stocks = _prod.get("Stocks") or []
+            _live   = float(_stocks[0].get("StockCurrent") or 0) if _stocks else 0.0
+        except Exception as _e:
+            print(f"  [warn] {_sku}: could not fetch stock ({_e}), showing 0")
+            _live = 0.0
+        preview.append({
+            "sku": _sku, "billbeeStock": _live, "sheetCurrent": _sc,
+            "sheetTarget": _st, "qty": _qty, "newStock": _live + _qty,
+        })
+
+    # ── Print confirmation table ──────────────────────────────────────────────
+    _w = max(len("SKU"), max(len(p["sku"]) for p in preview))
+    _hdr = (f"  {'Billbee akt.':>12}  {'Sheet akt.':>10}  {'Ziel':>6}"
+            f"  {'Bestellt':>8}  {'Neu':>8}  {'SKU':<{_w}}")
+    print()
+    print(_hdr)
+    print("  " + "-" * (len(_hdr) - 2))
+    for p in preview:
+        _sc_s = str(p["sheetCurrent"]) if p["sheetCurrent"] is not None else "?"
+        _st_s = str(p["sheetTarget"])  if p["sheetTarget"]  is not None else "?"
+        print(f"  {int(p['billbeeStock']):>12}  {_sc_s:>10}  {_st_s:>6}"
+              f"  {p['qty']:>8}  {int(p['newStock']):>8}  {p['sku']:<{_w}}")
+    print()
+
+    ans = input(f">> Add {len(preview)} item(s) to Billbee stock? [Enter = yes, q = cancel] ")
     if ans.strip().lower() == "q":
         print("Cancelled.")
         return
@@ -1407,34 +1450,10 @@ def _do_cart_fill(mfr: str, tab: str, orders_sheet_id: str,
         _wait("\n>> Place your order in the browser, then press Enter to close the browser ...")
         browser.close()
 
-    # ── Step 5: offer to update Billbee stock ────────────────────────────────
-    print("\nNext: add ordered quantities to Billbee stock.")
-    print("Make sure you have unchecked 'add to Billbee stock' for any items")
-    print("that will NOT be available for immediate shipment by the supplier.")
-    try:
-        from google_sheets_client import read_tab
-        _oss2 = open_sheet(orders_sheet_id)
-        all_rows = read_tab(_oss2, tab)
-        to_stock = [
-            r for r in all_rows
-            if str(r.get("add to Billbee stock") or "").strip().upper() in ("TRUE", "1", "YES")
-            and str(r.get("Qty") or "").strip() not in ("", "0")
-        ]
-        if to_stock:
-            print(f"\n{len(to_stock)} item(s) checked for Billbee stock update:")
-            for r in to_stock:
-                print(f"  {r.get('SKU', '?')}  qty={r.get('Qty', '?')}")
-        else:
-            print("  No items checked for Billbee stock update.")
-    except Exception as e:
-        print(f"  [warn] Could not read tab for stock preview: {e}")
-        all_rows = []
-
-    ans = input("\n>> Add checked quantities to Billbee stock? [Enter = yes, q = skip] ")
-    if ans.strip().lower() != "q":
-        _update_billbee_stock(mfr, all_rows)
-
-    print("Done!")
+    # ── Step 5: update Billbee stock ─────────────────────────────────────────
+    print("\nNext: update Billbee stock from ordered quantities.")
+    print("Uncheck 'add to Billbee stock' in the sheet for items not yet available.")
+    cmd_add_stock(mfr, tab)
 
 
 # ---------------------------------------------------------------------------

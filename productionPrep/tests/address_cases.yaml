@@ -323,6 +323,27 @@ cases:
     expected_issues: []
     expected_fix: {}
 
+  # ── Municipality entered as city; village sub-locality must not win ─────────
+  - description: "DE: Municipality as city — AddressAddition must be customer's value, not sub-locality"
+    notes: >
+      Real case: Veronika Volkmer, DE, ZIP 92706.  Customer entered municipality
+      'Luhe-Wildenau' as city.  OpenCage returns town='Luhe am Forst',
+      municipality='Luhe-Wildenau', village='Luhe'.  Old code matched village 'Luhe'
+      first (appears inside 'Luhe-Wildenau') and put the OpenCage name in Addition.
+      Fix: municipality is checked first; Addition always receives the customer's
+      original value (orig_city), not the OpenCage component string.
+      Deterministic check finds no issues — test only covers rule-based behaviour.
+    addr:
+      FirstName: Veronika
+      LastName: Volkmer
+      Street: "Marktplatz"
+      HouseNumber: "9"
+      Zip: "92706"
+      City: "Luhe-Wildenau"
+      CountryISO2: "DE"
+    expected_issues: []
+    expected_fix: {}
+
   # ── Municipality entered as city (geocode-only fix) ─────────────────────────
   - description: "DE: Customer entered municipality as city — no rule-based issues, geocode handles it"
     notes: >

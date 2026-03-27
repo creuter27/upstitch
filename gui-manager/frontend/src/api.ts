@@ -73,6 +73,32 @@ export async function getSheetExists(toolId: string, code: string): Promise<bool
   return data.exists
 }
 
+export async function getAddStockPreview(
+  toolId: string,
+  code: string,
+  tab?: string,
+): Promise<{
+  tab: string
+  items: AddStockPreviewItem[]
+  errors: { sku?: string; error: string }[]
+}> {
+  const params = tab ? `?tab=${encodeURIComponent(tab)}` : ''
+  const res = await apiFetch(`/tools/${toolId}/manufacturers/${code}/add-stock-preview${params}`)
+  return res.json()
+}
+
+export async function postAddStockApply(
+  toolId: string,
+  code: string,
+  items: { sku: string; billbeeId: number; qty: number }[],
+): Promise<{ ok: boolean; updated: number; errors: { sku: string; error: string }[] }> {
+  const res = await apiFetch(`/tools/${toolId}/manufacturers/${code}/add-stock-apply`, {
+    method: 'POST',
+    body: JSON.stringify({ items }),
+  })
+  return res.json()
+}
+
 export async function getPackaging(toolId: string): Promise<{
   mappings: PackagingMapping[]
   packageTypes: PackageType[]
@@ -179,6 +205,16 @@ export interface Manufacturer {
   pythonCmd: string
 }
 
+export interface AddStockPreviewItem {
+  sku: string
+  billbeeId: number
+  billbeeStock: number | null
+  sheetStockCurrent: number | null
+  sheetStockTarget: number | null
+  qty: number
+  newStock: number | null
+}
+
 export interface FileTreeNode {
   name: string
   path: string
@@ -235,16 +271,43 @@ export async function queryInventoryStock(
   return res.json()
 }
 
+export interface SheetImportItem {
+  sku: string
+  billbeeId: number
+  billbeeStock: number | null
+  qty: number
+}
+
+export async function getSheetTabs(toolId: string, sheet: string): Promise<{ tabs: string[]; error: string | null }> {
+  const params = new URLSearchParams({ sheet })
+  const res = await apiFetch(`/tools/${toolId}/inventory/sheet-tabs?${params}`)
+  return res.json()
+}
+
+export async function getSheetImport(
+  toolId: string,
+  manufacturer: string,
+  sheet: string,
+  tab: string,
+  skuCol: string,
+  qtyCol: string,
+): Promise<{ items: SheetImportItem[]; errors: { sku?: string; error: string }[] }> {
+  const params = new URLSearchParams({ sheet, tab, sku_col: skuCol, qty_col: qtyCol, manufacturer })
+  const res = await apiFetch(`/tools/${toolId}/inventory/sheet-import?${params}`)
+  return res.json()
+}
+
 export async function updateInventoryStock(
   toolId: string,
   sku: string,
   billbeeId: number,
-  _stockId: number | undefined,
-  newQuantity: number,
+  delta?: number,
+  newQuantity?: number,
+  reason?: string,
 ): Promise<{ ok: boolean; sku: string; previousStock: number; newStock: number }> {
   const res = await apiFetch(`/tools/${toolId}/inventory/stock/update`, {
     method: 'POST',
-    body: JSON.stringify({ sku, billbeeId, newQuantity }),
+    body: JSON.stringify({ sku, billbeeId, delta, newQuantity, reason }),
   })
   return res.json()
 }

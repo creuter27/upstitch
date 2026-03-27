@@ -54,3 +54,7 @@ class StockUpdateRequest(BaseModel):
     delta: Optional[float] = None
     newQuantity: Optional[float] = None
     reason: str = "GUI: manual stock correction"
+
+
+class AddStockApplyRequest(BaseModel):
+    items: list[dict]  # [{sku, billbeeId, qty}]

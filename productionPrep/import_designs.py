@@ -176,7 +176,7 @@ def _process_rows(
             "war <old-design>".
     Rule f: category contains "handtuch" AND original matches
             "Wunschtext Zeile 2 (optional):<text>(Schrift" with non-blank
-            <text> → stripped <text> is written into text2.
+            <text> → stripped <text> written into text (if empty), else text2.
     Rule g: textColor is not empty → resolve against Garnfarben color list:
               - exact or alias match  → replace value with canonical name
               - fuzzy match           → replace value with canonical name
@@ -217,10 +217,10 @@ def _process_rows(
         while len(row) <= max_col:
             row.append("")
 
-        # Rule f — towel orders: extract "Wunschtext Zeile 2" from original → text2
+        # Rule f — towel orders: extract "Wunschtext Zeile 2" from original
+        #          → text if text is empty, otherwise → text2
         if (
             category_idx is not None
-            and text2_idx is not None
             and orig_idx is not None
             and "handtuch" in row[category_idx].lower()
         ):
@@ -228,7 +228,10 @@ def _process_rows(
             if m:
                 extracted = m.group(1).strip()
                 if extracted:
-                    row[text2_idx] = extracted
+                    if text_idx is not None and not row[text_idx].strip():
+                        row[text_idx] = extracted
+                    elif text2_idx is not None:
+                        row[text2_idx] = extracted
 
         # Rule d — clear lone "X" / "x"
         if text_idx is not None and row[text_idx].strip() in ("x", "X"):
@@ -237,13 +240,16 @@ def _process_rows(
             row[text2_idx] = ""
 
         # Rule e — extract design code from "original", update design column
+        #          (skip if the found code is already the value, case-insensitive)
         if orig_idx is not None and design_idx is not None:
             m = DESIGN_RE.search(row[orig_idx])
             if m:
+                new_design = m.group(0).upper()
                 old_design = row[design_idx]
-                row[design_idx] = m.group(0).upper()
-                yellow_cells.append((row_0based, design_idx))
-                notes.append((row_0based, design_idx, f"war {old_design}"))
+                if new_design != old_design.upper().strip():
+                    row[design_idx] = new_design
+                    yellow_cells.append((row_0based, design_idx))
+                    notes.append((row_0based, design_idx, f"war {old_design}"))
 
         # Rule g — resolve textColor against Garnfarben list
         if (

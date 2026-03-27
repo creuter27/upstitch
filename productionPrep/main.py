@@ -804,32 +804,28 @@ def _geocode_suggestion(addr: dict, geo: dict | None,
             fix["City"] = city
             if orig_city and not (addr.get("AddressAddition") or "").strip():
                 orig_lower = orig_city.lower()
-                # Check if orig_city matches a sub-locality (e.g. district in formatted)
-                matched_sublocality = next(
-                    (
-                        (components.get(k) or "").strip()
-                        for k in _SUB_KEYS + ("town",)
-                        if len((components.get(k) or "").strip()) >= 4
-                        and (components.get(k) or "").strip().lower() in orig_lower
-                    ),
-                    None,
-                )
-                if matched_sublocality:
-                    fix["AddressAddition"] = matched_sublocality
-                else:
-                    # Check if orig_city IS (or is a slight misspelling of) the
-                    # municipality — customer entered the parent admin area instead
-                    # of the specific town.  Preserve it in Addition.
-                    # Use the official municipality spelling in AddressAddition.
-                    municipality = (components.get("municipality") or "").strip()
-                    if municipality:
-                        sim = _municipality_similarity(municipality, orig_city)
-                        if sim >= 0.85:
-                            # Exact or near-exact match → confidently a municipality
-                            fix["AddressAddition"] = municipality
-                        elif sim >= 0.65 and geo.get("confidence", 0) >= 9:
-                            # Probable match with high geocode confidence → accept
-                            fix["AddressAddition"] = municipality
+                # Search all geographic OpenCage components to find which one the
+                # customer's city name refers to.  We always put the customer's
+                # original value in AddressAddition (their spelling, not OpenCage's).
+                # Municipality is checked first so an exact match wins over a
+                # partial village/suburb name that happens to appear inside it.
+                _geo_keys = ["municipality", "town"] + list(_SUB_KEYS)
+                _found = False
+                for _k in _geo_keys:
+                    _val = (components.get(_k) or "").strip()
+                    if len(_val) < 4:
+                        continue
+                    sim = _municipality_similarity(_val, orig_city)
+                    if sim >= 0.85 or (sim >= 0.65 and geo.get("confidence", 0) >= 9):
+                        fix["AddressAddition"] = orig_city
+                        _found = True
+                        break
+                    # Also accept if the component text appears inside orig_city
+                    # (e.g. "Mitte" inside "Berlin-Mitte")
+                    if len(_val) >= 4 and _val.lower() in orig_lower:
+                        fix["AddressAddition"] = orig_city
+                        _found = True
+                        break
 
     return fix
 
