@@ -10,6 +10,9 @@ functions:
     description: "Führt alle drei Schritte nacheinander aus: Adressen & Verpackung korrigieren, Dokumente abrufen, Versandlabels erstellen."
     is_launch: true
     supports_dry_run: true
+  - name: "importDesigns"
+    command: "./importDesigns.sh"
+    description: "Importiert die Design-CSV als neues datumsbasiertes Tab in 'Upstitch Design Sheet'. Öffnet das Tab danach im Browser."
   - name: "fixAddressesAndPackaging"
     command: "./fixAddressesAndPackaging.sh"
     description: "Korrigiert Lieferadressen und setzt Pakettyp-Tags in Billbee. Danach fetchDocuments ausführen, während Billbee die Versandprofile automatisch zuweist."

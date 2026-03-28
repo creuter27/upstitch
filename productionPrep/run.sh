@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Full production preparation workflow — runs all three steps in sequence:
+# Full production preparation workflow — runs all four steps in sequence:
 #
+#   0. importDesigns             — import design CSV as new dated tab in Design Sheet
 #   1. fixAddressesAndPackaging  — fix addresses, set package types + order state
 #   2. fetchDocuments            — fetch invoices + delivery notes
 #                                  (runs while Billbee automation assigns shipping profiles)
@@ -18,6 +19,12 @@ echo " productionPrep — Full Workflow"
 echo "======================================================"
 echo
 
+echo "────────────────────────────────"
+echo " Step 0: Import Designs CSV"
+echo "────────────────────────────────"
+"$VENV"/bin/python import_designs.py
+
+echo
 echo "────────────────────────────────"
 echo " Step 1: Fix Addresses & Packaging"
 echo "────────────────────────────────"

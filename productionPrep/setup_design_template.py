@@ -49,7 +49,17 @@ SHEET_NAME   = "Upstitch Design Sheet"
 TEMPLATE_TAB = "Template"
 
 # Expected column headers (case-insensitive match)
-EXPECTED_COLS = ("original", "text", "design", "textfont")
+EXPECTED_COLS = ("original", "text", "design", "textfont", "category")
+
+# Categories exempt from the "design must match M[0-9]{1,4}" CF rule (rule b)
+EXCLUDED_CATEGORIES = (
+    "flasche",
+    "brotdose",
+    "holzbus",
+    "holzflugzeug",
+    "holzrassel",
+    "motorikschleife",
+)
 
 # Colors
 _RED    = {"red": 0.867, "green": 0.0, "blue": 0.0}
@@ -129,6 +139,7 @@ def setup_template(spreadsheet, template_ws) -> None:
     text_l   = cl("text")
     design_l = cl("design")
     font_l   = cl("textfont")
+    cat_l    = cl("category")
 
 
     # --- Fetch current CF rules so we know how many to delete -------------
@@ -177,13 +188,19 @@ def setup_template(spreadsheet, template_ws) -> None:
         })
         rule_idx += 1
 
-    # Rule b: design doesn't match M[0-9]{1,4} AND no "ohne name" ---------
+    # Rule b: design doesn't match M[0-9]{1,4} AND no "ohne name"
+    #         AND category not in EXCLUDED_CATEGORIES ------------------
     if design_l and orig_l:
+        cat_excl = (
+            "".join(f'NOT(${cat_l}2="{c}"),' for c in EXCLUDED_CATEGORIES)
+            if cat_l else ""
+        )
         formula = (
             f'=AND('
             f'NOT(IFERROR(REGEXMATCH(${design_l}2,"(?i)^M[0-9]{{1,4}}$"),FALSE)),'
-            f'NOT(ISNUMBER(SEARCH("ohne name",${orig_l}2)))'
-            f')'
+            f'NOT(ISNUMBER(SEARCH("ohne name",${orig_l}2))),'
+            f'{cat_excl}'
+            f'TRUE)'  # trailing TRUE closes the AND cleanly after the last comma
         )
         requests.append({
             "addConditionalFormatRule": {

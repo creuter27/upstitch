@@ -46,6 +46,9 @@ _YELLOW = {"red": 1.0, "green": 1.0, "blue": 0.0}
 # Design code: letter M (case-insensitive) followed by 1–4 digits
 DESIGN_RE = re.compile(r"(?i)M[0-9]{1,4}")
 
+# Date-pattern tabs: yy-mm-dd or yy-mm-dd-N (suffix from _find_available_tab_name)
+DATE_TAB_RE = re.compile(r"^\d{2}-\d{2}-\d{2}(-\d+)?$")
+
 # Extracts the optional second wish-text line from the "original" field on towel orders.
 # Matches: "Wunschtext Zeile 2 (optional):<captured>(Schrift"
 WUNSCHTEXT2_RE = re.compile(r"Wunschtext Zeile 2 \(optional\):(.+?)\(Schrift", re.IGNORECASE)
@@ -373,6 +376,22 @@ def _find_available_tab_name(spreadsheet, base: str) -> str:
     raise RuntimeError("Could not find an available tab name after 199 attempts.")
 
 
+def _move_to_first_date_position(spreadsheet, new_ws) -> None:
+    """Move new_ws to be the first tab among all date-pattern (yy-mm-dd) tabs."""
+    worksheets = spreadsheet.worksheets()
+    for i, ws in enumerate(worksheets):
+        if ws.id != new_ws.id and DATE_TAB_RE.match(ws.title):
+            spreadsheet.batch_update({"requests": [{
+                "updateSheetProperties": {
+                    "properties": {"sheetId": new_ws.id, "index": i},
+                    "fields": "index",
+                }
+            }]})
+            print(f"[ok] Moved '{new_ws.title}' to tab position {i} (first among date tabs)")
+            return
+    print(f"[ok] '{new_ws.title}' is the only date tab — no reordering needed")
+
+
 def _duplicate_template(spreadsheet, template_id: int, new_name: str):
     """Duplicate the Template sheet; return the new gspread Worksheet."""
     response = spreadsheet.batch_update({
@@ -462,6 +481,7 @@ def main() -> None:
     print(f"[..] Duplicating '{TEMPLATE_TAB}' → '{tab_name}' …")
     new_ws = _duplicate_template(spreadsheet, template.id, tab_name)
     print(f"[ok] Tab '{tab_name}' created")
+    _move_to_first_date_position(spreadsheet, new_ws)
 
     # ------------------------------------------------------------------
     # Upload data  (clear() removes values only — formatting stays intact)

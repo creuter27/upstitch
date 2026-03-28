@@ -37,7 +37,8 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse
 
-_LANG_RE = re.compile(r"^/([a-z]{2})(?:/|$)")
+_LANG_RE     = re.compile(r"^/([a-z]{2})(?:/|$)")
+_ORDER_TAB_RE = re.compile(r"^\d{2}-\d{2}-\d{2}(-\d+)?$")
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -137,6 +138,20 @@ def stock_cache_file(mfr: str) -> Path: return _tmp(mfr) / f"{mfr}_stock.json"
 def skip_file(mfr: str)    -> Path: return _tmp(mfr) / f"{mfr}_skip.txt"
 def sheet_name(mfr: str)        -> str: return f"Billbee Artikelmanager {mfr}"
 def orders_sheet_name(mfr: str) -> str: return f"{mfr} Orders"
+
+
+def _move_order_tab_first(oss, ws) -> None:
+    """Move ws to be first among all yy-mm-dd tabs in the Orders sheet."""
+    for i, w in enumerate(oss.worksheets()):
+        if w.id != ws.id and _ORDER_TAB_RE.match(w.title):
+            oss.batch_update({"requests": [{
+                "updateSheetProperties": {
+                    "properties": {"sheetId": ws.id, "index": i},
+                    "fields": "index",
+                }
+            }]})
+            print(f"[ok] Moved '{ws.title}' to tab position {i} (first among date tabs)")
+            return
 CATALOG_TAB      = "B2B Catalog"
 MAPPING_TAB      = "mapping"
 PRODUCT_LIST_TAB = "ProductList"
@@ -1178,7 +1193,7 @@ def cmd_order(mfr: str, dry_run: bool, factor: float = 1.0, cached: bool = False
 
     # ── 2. Write to {MFR} Orders sheet ───────────────────────────────────────
     oname = orders_sheet_name(mfr)
-    tab   = f"Order {date.today().isoformat()}"
+    tab   = date.today().strftime("%y-%m-%d")
     print(f"\nWriting order tab '{tab}' to '{oname}' ...")
     try:
         oss = open_sheet_by_name(oname)
@@ -1206,10 +1221,11 @@ def cmd_order(mfr: str, dry_run: bool, factor: float = 1.0, cached: bool = False
             "rule": {"condition": {"type": "BOOLEAN"}, "showCustomUi": True},
         }
     }]})
+    _move_order_tab_first(oss, _ws_order)
 
     orders_sheet_id = oss.id   # save ID — re-open by key after the pause to avoid
                                # stale connections and duplicate-name ambiguity
-    webbrowser.open(oss.url)
+    webbrowser.open(f"https://docs.google.com/spreadsheets/d/{oss.id}/edit#gid={_ws_order.id}")
     print(f"\nSheet open. Review quantities for in-stock items.")
     _wait(">> Press Enter to open the browser and fill the cart ...")
 
@@ -1465,7 +1481,7 @@ def cmd_fill_cart(mfr: str, tab: str | None) -> None:
     Open an existing order tab in '{MFR} Orders' and fill the cart — without
     re-fetching Billbee stock, re-writing the order tab, etc.
 
-    If --tab is omitted, uses the most recent 'Order YYYY-MM-DD' tab.
+    If --tab is omitted, uses the most recent 'yy-mm-dd' tab.
     """
     import webbrowser
     from google_sheets_client import read_tab
@@ -1483,11 +1499,11 @@ def cmd_fill_cart(mfr: str, tab: str | None) -> None:
     if not tab:
         tab_names = [ws.title for ws in oss.worksheets()]
         order_tabs = sorted(
-            [t for t in tab_names if t.startswith("Order 20")],
+            [t for t in tab_names if _ORDER_TAB_RE.match(t)],
             reverse=True,
         )
         if not order_tabs:
-            print(f"[error] No 'Order YYYY-MM-DD' tabs found in '{oname}'.")
+            print(f"[error] No 'yy-mm-dd' order tabs found in '{oname}'.")
             sys.exit(1)
         tab = order_tabs[0]
         print(f"  Using most recent tab: '{tab}'")
@@ -1558,14 +1574,14 @@ def main():
                          help="Add ordered quantities from a completed order tab to Billbee stock.")
     asp.add_argument("--manufacturer", required=True, metavar="MFR")
     asp.add_argument("--tab", required=True,
-                     help="Order tab name, e.g. 'Order 2026-03-08'.")
+                     help="Order tab name, e.g. '26-03-08'.")
 
     # fill-cart
     fcp = sub.add_parser("fill-cart",
                          help="Re-run the cart-fill step for an existing order tab.")
     fcp.add_argument("--manufacturer", required=True, metavar="MFR")
     fcp.add_argument("--tab", default=None,
-                     help="Order tab name (default: most recent 'Order YYYY-MM-DD' tab).")
+                     help="Order tab name (default: most recent 'yy-mm-dd' tab).")
 
     args = parser.parse_args()
     mfr  = args.manufacturer.upper()
