@@ -25,7 +25,7 @@ sys.path.insert(0, _repo)
 sys.path.insert(0, os.path.join(_repo, "billbee-python-client"))
 
 from billbee_client import BillbeeClient  # noqa: E402
-from execution.mappings_loader import Mappings  # noqa: E402
+from mappings_loader import Mappings  # noqa: E402
 
 
 def _get_title_de(product: dict) -> str:
