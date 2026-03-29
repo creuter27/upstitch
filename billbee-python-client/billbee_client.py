@@ -298,6 +298,34 @@ class BillbeeClient:
         resp = self.session.delete(f"{BASE_URL}/products/{product_id}")
         resp.raise_for_status()
 
+    def get_stock_multiple(self, skus: list[str], page_size: int = 5000) -> list[dict]:
+        """
+        POST /products/stockmultiple — fetch stock for multiple products by SKU in one call.
+
+        Request body: {"skus": ["SKU-001", ...]}
+        Query params: pageSize (default 5000), page (default 1)
+
+        Returns a list of result dicts. Each item typically contains:
+          SKU, StockCurrent, StockId  (field names confirmed from Billbee swagger)
+
+        Pages through all results if total > page_size (unlikely with default 5000).
+        """
+        results = []
+        page = 1
+        while True:
+            data = self._request(
+                "POST", "/products/stockmultiple",
+                json={"skus": skus},
+                params={"page": page, "pageSize": page_size},
+            )
+            items = data.get("Data") or []
+            results.extend(items)
+            total = data.get("Paging", {}).get("TotalRows", len(results))
+            if page * page_size >= total or not items:
+                break
+            page += 1
+        return results
+
     def update_stock(self, sku: str, new_quantity: float,
                      stock_id: int = 0, reason: str = "") -> dict:
         """

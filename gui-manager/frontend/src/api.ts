@@ -298,15 +298,49 @@ export async function streamInventoryProductsFromBillbee(
   return { errors }
 }
 
+export interface StockQueryProgress { scanned: number; total: number; found: number }
+
 export async function queryInventoryStock(
   toolId: string,
   products: { sku: string; billbeeId: number }[],
+  onProgress?: (p: StockQueryProgress) => void,
 ): Promise<{ stocks: Record<string, { stock: number; stockId: number }>; errors: string[] }> {
-  const res = await apiFetch(`/tools/${toolId}/inventory/stock/query`, {
+  const token = getToken()
+  const res = await fetch(`${BASE_URL}/tools/${toolId}/inventory/stock/query`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify({ products }),
   })
-  return res.json()
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`HTTP ${res.status}: ${text}`)
+  }
+  const stocks: Record<string, { stock: number; stockId: number }> = {}
+  const errors: string[] = []
+  const reader = res.body!.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop()!
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        try {
+          const evt = JSON.parse(line.slice(6))
+          if (evt.type === 'stock') stocks[evt.sku] = { stock: evt.stock, stockId: evt.stockId }
+          else if (evt.type === 'progress') onProgress?.(evt as StockQueryProgress)
+          else if (evt.type === 'error') errors.push(evt.data?.error ?? String(evt.data))
+        } catch { /* non-JSON line — ignore */ }
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  return { stocks, errors }
 }
 
 export interface SheetImportItem {

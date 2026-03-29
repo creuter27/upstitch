@@ -195,8 +195,9 @@ export default function InventoryPanel({ toolId }: Props) {
   const [filterColor,   setFilterColor]   = useState<Set<string>>(() => cached.color)
   const [filterVariant, setFilterVariant] = useState<Set<string>>(() => cached.variant)
 
-  const [loadingStock, setLoadingStock] = useState(false)
-  const [stockError, setStockError]     = useState('')
+  const [loadingStock, setLoadingStock]         = useState(false)
+  const [stockProgress, setStockProgress]       = useState<{ scanned: number; total: number; found: number } | null>(null)
+  const [stockError, setStockError]             = useState('')
 
   const [selected, setSelected]   = useState<InventoryProduct | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -360,10 +361,12 @@ export default function InventoryPanel({ toolId }: Props) {
 
   async function handleFetchStock() {
     if (filteredProducts.length === 0) return
-    setLoadingStock(true); setStockError('')
+    setLoadingStock(true); setStockError(''); setStockProgress(null)
     try {
       const toQuery = filteredProducts.map((p) => ({ sku: p.sku, billbeeId: p.billbeeId }))
-      const data = await queryInventoryStock(toolId, toQuery)
+      const data = await queryInventoryStock(toolId, toQuery,
+        (p) => setStockProgress(p),
+      )
       setStockMap((prev) => {
         const next = { ...prev }
         for (const [sku, result] of Object.entries(data.stocks)) next[sku] = result.stock
@@ -373,7 +376,7 @@ export default function InventoryPanel({ toolId }: Props) {
     } catch (e) {
       setStockError(String(e))
     } finally {
-      setLoadingStock(false)
+      setLoadingStock(false); setStockProgress(null)
     }
   }
 
@@ -1029,10 +1032,20 @@ export default function InventoryPanel({ toolId }: Props) {
                     cursor:     loadingStock ? 'default' : 'pointer',
                   }}
                 >
-                  {loadingStock ? `Lädt Stock… (${filteredProducts.length})` : 'akt. Lagerbestand abfragen'}
+                  {loadingStock
+                    ? (stockProgress ? `Stock… (${stockProgress.found}/${filteredProducts.length})` : 'Verbinde…')
+                    : 'akt. Lagerbestand abfragen'}
                 </button>
               </div>
-              {loadingStock && <IndeterminateBar color="#16a34a" />}
+              {loadingStock && (stockProgress && stockProgress.total > 0
+                ? <>
+                    <DeterminateBar done={stockProgress.scanned} total={stockProgress.total} color="#16a34a" />
+                    <div className="px-4 pb-1 text-xs shrink-0" style={{ color: '#4ade80' }}>
+                      {stockProgress.scanned} / {stockProgress.total} gescannt · {stockProgress.found} / {filteredProducts.length} gefunden
+                    </div>
+                  </>
+                : <IndeterminateBar color="#16a34a" />
+              )}
               {stockError && <div className="px-4 pb-1 text-xs" style={{ color: '#f87171' }}>{stockError}</div>}
             </>
           )}

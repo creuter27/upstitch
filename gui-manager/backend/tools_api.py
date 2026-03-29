@@ -512,18 +512,21 @@ async def get_inventory_products_billbee(
 
 
 @router.post("/api/tools/{tool_id}/inventory/stock/query")
-def query_inventory_stock(
+async def query_inventory_stock(
     tool_id: str,
     body: StockQueryRequest,
     current_user: User = Depends(get_current_user),
-) -> dict:
+) -> StreamingResponse:
     """
-    Fetch live stock levels from Billbee for the given products.
+    Stream live stock levels from Billbee as SSE (text/event-stream).
 
     Body: {"products": [{"sku": "...", "billbeeId": 12345}, ...]}
-    Returns {"stocks": {"SKU": {"stock": N, "stockId": N}}, "errors": [...]}.
 
-    Note: rate-limited at ~0.6 s/product; allow extra time for large lists.
+    Each event is a JSON line:
+      {"type":"stock",    "sku":"...", "stock":N, "stockId":N}
+      {"type":"progress", "scanned":N, "total":M, "found":F}   (large lists only)
+      {"type":"error",    "data":{"sku":"...", "error":"..."}}
+      {"type":"done",     "total":N}
     """
     manifest = get_tool_by_id(tool_id)
     if manifest is None:
@@ -533,9 +536,33 @@ def query_inventory_stock(
     script = os.path.join(tool_path, "execution", "gui_get_stock.py")
 
     products_json = json.dumps(body.products)
-    # Allow 1 s per product plus 10 s overhead, minimum 30 s
-    timeout = max(30, len(body.products) * 1 + 10)
-    return _run_tool_script(python, script, ["--products", products_json], timeout=timeout)
+
+    async def generate():
+        proc = await asyncio.create_subprocess_exec(
+            python, script, "--products", products_json,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            async for raw in proc.stdout:
+                line = raw.decode().strip()
+                if line:
+                    yield f"data: {line}\n\n"
+        except asyncio.CancelledError:
+            proc.terminate()
+            raise
+        finally:
+            await proc.wait()
+            if proc.returncode not in (0, None, -15):
+                err = (await proc.stderr.read()).decode().strip()
+                error_evt = json.dumps({"type": "error", "data": {"sku": "*", "error": err}})
+                yield f"data: {error_evt}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/api/tools/{tool_id}/inventory/stock/update")
