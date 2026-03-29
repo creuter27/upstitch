@@ -64,85 +64,103 @@ def main() -> None:
         print(json.dumps({"products": [], "errors": [{"manufacturer": "*", "error": f"Failed to fetch custom field definitions: {exc}"}]}, ensure_ascii=False))
         return
 
-    products: list[dict] = []
-    errors: list[dict] = []
+    count = 0
+    page = 1
+    page_size = 250
+    total_rows: int | None = None
 
     try:
-        for product in client.get_all_products():
-            # Skip BOM products (Type == 2) and deactivated
-            if int(product.get("Type") or 0) == 2:
-                continue
-            if product.get("IsDeactivated"):
-                continue
+        while True:
+            data = client._get("/products", params={"page": page, "pageSize": page_size})
+            items = data.get("Data", [])
+            if total_rows is None:
+                total_rows = data.get("Paging", {}).get("TotalRows", 0)
+            scanned_so_far = (page - 1) * page_size + len(items)
 
-            sku = str(product.get("SKU") or "").strip()
-            if not sku:
-                continue
+            for product in items:
+                # Skip BOM products (Type == 2) and deactivated
+                if int(product.get("Type") or 0) == 2:
+                    continue
+                if product.get("IsDeactivated"):
+                    continue
 
-            # Determine which manufacturer code this product belongs to
-            sku_lower = sku.lower()
-            mfr_native = str(product.get("Manufacturer") or "").lower()
-            matched_code: str | None = None
-            for code, tokens in mfr_token_map.items():
-                if any(t in sku_lower or t in mfr_native for t in tokens):
-                    matched_code = code
-                    break
-            if matched_code is None:
-                continue
+                sku = str(product.get("SKU") or "").strip()
+                if not sku:
+                    continue
 
-            # Extract custom fields
-            custom_fields = product.get("CustomFields") or []
-            cf_by_name: dict[str, str] = {}
-            for cf in custom_fields:
-                fid = cf.get("DefinitionId") or cf.get("Id")
-                name = field_defs.get(fid)
-                if name:
-                    cf_by_name[name] = str(cf.get("Value") or "")
+                sku_lower = sku.lower()
+                mfr_native = str(product.get("Manufacturer") or "").lower()
+                matched_code: str | None = None
+                for code, tokens in mfr_token_map.items():
+                    if any(t in sku_lower or t in mfr_native for t in tokens):
+                        matched_code = code
+                        break
+                if matched_code is None:
+                    continue
 
-            category = cf_by_name.get("Produktkategorie", "")
-            size     = cf_by_name.get("Produktgröße",     "")
-            variant  = cf_by_name.get("Produktvariante",  "")
-            color    = cf_by_name.get("Produktfarbe",     "")
+                custom_fields = product.get("CustomFields") or []
+                cf_by_name: dict[str, str] = {}
+                for cf in custom_fields:
+                    fid = cf.get("DefinitionId") or cf.get("Id")
+                    name = field_defs.get(fid)
+                    if name:
+                        cf_by_name[name] = str(cf.get("Value") or "")
 
-            # Apply optional attribute filters (case-insensitive substring match)
-            if args.category and args.category.lower() not in category.lower():
-                continue
-            if args.size     and args.size.lower()     not in size.lower():
-                continue
-            if args.color    and args.color.lower()    not in color.lower():
-                continue
-            if args.variant  and args.variant.lower()  not in variant.lower():
-                continue
+                category = cf_by_name.get("Produktkategorie", "")
+                size     = cf_by_name.get("Produktgröße",     "")
+                variant  = cf_by_name.get("Produktvariante",  "")
+                color    = cf_by_name.get("Produktfarbe",     "")
 
-            stocks = product.get("Stocks") or []
-            raw_stock = stocks[0].get("StockCurrent", "") if stocks else ""
-            try:
-                cached_stock: float | None = float(raw_stock) if raw_stock != "" else None
-            except (ValueError, TypeError):
-                cached_stock = None
+                if args.category and args.category.lower() not in category.lower():
+                    continue
+                if args.size     and args.size.lower()     not in size.lower():
+                    continue
+                if args.color    and args.color.lower()    not in color.lower():
+                    continue
+                if args.variant  and args.variant.lower()  not in variant.lower():
+                    continue
 
-            raw_target = stocks[0].get("StockDesired", "") if stocks else ""
-            try:
-                stock_target: float | None = float(raw_target) if raw_target != "" else None
-            except (ValueError, TypeError):
-                stock_target = None
+                stocks = product.get("Stocks") or []
+                raw_stock = stocks[0].get("StockCurrent", "") if stocks else ""
+                try:
+                    cached_stock: float | None = float(raw_stock) if raw_stock != "" else None
+                except (ValueError, TypeError):
+                    cached_stock = None
 
-            products.append({
-                "sku":          sku,
-                "title":        _get_title_de(product),
-                "billbeeId":    product.get("Id", ""),
-                "category":     category,
-                "size":         size,
-                "variant":      variant,
-                "color":        color,
-                "manufacturer": matched_code,
-                "cachedStock":  cached_stock,
-                "stockTarget":  stock_target,
-            })
+                raw_target = stocks[0].get("StockDesired", "") if stocks else ""
+                try:
+                    stock_target: float | None = float(raw_target) if raw_target != "" else None
+                except (ValueError, TypeError):
+                    stock_target = None
+
+                print(json.dumps({"type": "product", "data": {
+                    "sku":          sku,
+                    "title":        _get_title_de(product),
+                    "billbeeId":    product.get("Id", ""),
+                    "category":     category,
+                    "size":         size,
+                    "variant":      variant,
+                    "color":        color,
+                    "manufacturer": matched_code,
+                    "cachedStock":  cached_stock,
+                    "stockTarget":  stock_target,
+                }}, ensure_ascii=False), flush=True)
+                count += 1
+
+            # Emit page-level progress after each page
+            print(json.dumps({"type": "progress", "scanned": scanned_so_far,
+                               "total": total_rows or 0, "found": count}),
+                  flush=True)
+
+            if not items or scanned_so_far >= (total_rows or 0):
+                break
+            page += 1
+
     except Exception as exc:
-        errors.append({"manufacturer": "*", "error": str(exc)})
+        print(json.dumps({"type": "error", "data": {"manufacturer": "*", "error": str(exc)}},
+                         ensure_ascii=False), flush=True)
 
-    print(json.dumps({"products": products, "errors": errors}, ensure_ascii=False))
+    print(json.dumps({"type": "done", "total": count}, ensure_ascii=False), flush=True)
 
 
 if __name__ == "__main__":

@@ -49,7 +49,8 @@ class BillbeeClient:
             if resp.status_code == 429:
                 retry_after = float(resp.headers.get("Retry-After", 5))
                 wait = retry_after + 1  # add 1 s buffer
-                print(f"[rate-limit] 429 received — waiting {wait:.0f} s before retry (attempt {attempt + 1}/{max_retries})")
+                import sys as _sys
+                print(f"[rate-limit] 429 received — waiting {wait:.0f} s before retry (attempt {attempt + 1}/{max_retries})", file=_sys.stderr, flush=True)
                 time.sleep(wait)
                 continue
             if resp.status_code in allow_error_codes:

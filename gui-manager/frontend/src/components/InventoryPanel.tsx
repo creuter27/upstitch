@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  getInventoryManufacturers, getInventoryProducts, getInventoryProductsFromBillbee,
+  getInventoryManufacturers, getInventoryProducts, streamInventoryProductsFromBillbee,
   queryInventoryStock, updateInventoryStock, getSheetImport, getSheetTabs,
-  InventoryProduct, SheetImportItem,
+  InventoryProduct, SheetImportItem, BillbeeStreamProgress,
 } from '../api'
 import MultiSelect from './MultiSelect'
 
@@ -181,9 +181,13 @@ export default function InventoryPanel({ toolId }: Props) {
   const [pending, setPending]     = useState<Record<string, number>>(() => pendingCache[toolId] ?? {})
   const [sheetErrors, setSheetErrors] = useState<{ manufacturer: string; error: string }[]>([])
 
-  const [loadingProducts, setLoadingProducts] = useState(false)
-  const [loadingBillbee, setLoadingBillbee]   = useState(false)
-  const [loadError, setLoadError]             = useState('')
+  const [loadingProducts, setLoadingProducts]   = useState(false)
+  const [loadingBillbee, setLoadingBillbee]     = useState(false)
+  const [billbeeProgress, setBillbeeProgress]   = useState<BillbeeStreamProgress | null>(null)
+  const billbeeStartRef                         = useRef<number>(0)
+  // Rolling window: [{ scanned, ts }] for the last few progress events — used for remaining-time
+  const billbeeWindowRef                        = useRef<{ scanned: number; ts: number }[]>([])
+  const [loadError, setLoadError]               = useState('')
 
   const cached = filterCache[toolId] ?? emptyFilters()
   const [filterCat,     setFilterCat]     = useState<Set<string>>(() => cached.cat)
@@ -319,16 +323,33 @@ export default function InventoryPanel({ toolId }: Props) {
 
   async function handleUpdateFromBillbee() {
     if (selectedManufacturers.size === 0) return
-    setLoadingBillbee(true)
+    setLoadingBillbee(true); setBillbeeProgress(null)
+    billbeeStartRef.current = Date.now(); billbeeWindowRef.current = []
     setLoadError(''); setSheetErrors([])
     setProducts([]); setStockMap({}); setAndCachePending({})
     productCache[toolId] = []; stockCache[toolId] = {}
     setSelected(null); setEditValue('')
+    const collected: InventoryProduct[] = []
     try {
-      const data = await getInventoryProductsFromBillbee(toolId, [...selectedManufacturers])
-      productCache[toolId] = data.products
-      stockCache[toolId] = {}
-      setProducts(data.products); setStockMap({})
+      const data = await streamInventoryProductsFromBillbee(
+        toolId,
+        [...selectedManufacturers],
+        (p) => { collected.push(p) },
+        (p) => {
+          const win = billbeeWindowRef.current
+          win.push({ scanned: p.scanned, ts: Date.now() })
+          if (win.length > 12) win.shift()
+          setBillbeeProgress(p)
+        },
+      )
+      // Pre-populate stockMap from cachedStock so "Lagerbestand abfragen" isn't needed
+      const preStock: Record<string, number | null> = {}
+      for (const p of collected) {
+        if (p.cachedStock !== undefined) preStock[p.sku] = p.cachedStock ?? null
+      }
+      productCache[toolId] = collected
+      stockCache[toolId] = preStock
+      setProducts(collected); setStockMap(preStock)
       setSheetErrors(data.errors ?? [])
     } catch (e) {
       setLoadError(String(e))
@@ -604,7 +625,9 @@ export default function InventoryPanel({ toolId }: Props) {
               cursor:     (isLoading || selectedManufacturers.size === 0) ? 'default' : 'pointer',
             }}
           >
-            {loadingBillbee ? 'Lädt von Billbee…' : 'Update von Billbee (langsam)'}
+            {loadingBillbee
+              ? (billbeeProgress ? `Billbee… (${billbeeProgress.found})` : 'Verbinde…')
+              : 'Update von Billbee (langsam)'}
           </button>
           <button
             onClick={() => setImportOpen((v) => !v)}
@@ -628,7 +651,37 @@ export default function InventoryPanel({ toolId }: Props) {
 
       {/* Product-load progress bar */}
       {loadingProducts && <IndeterminateBar color="#007acc" />}
-      {loadingBillbee  && <IndeterminateBar color="#2472c8" />}
+      {loadingBillbee  && (
+        <>
+          {billbeeProgress && billbeeProgress.total > 0
+            ? <DeterminateBar done={billbeeProgress.scanned} total={billbeeProgress.total} color="#2472c8" />
+            : <IndeterminateBar color="#2472c8" />}
+          <div className="px-4 pb-1 text-xs shrink-0" style={{ color: '#6b9fd4' }}>
+            {billbeeProgress && billbeeProgress.total > 0 ? (() => {
+              const win = billbeeWindowRef.current
+              let remStr = '…'
+              if (win.length >= 3) {
+                // Build per-interval durations (seconds per product scanned)
+                const intervals: number[] = []
+                for (let i = 1; i < win.length; i++) {
+                  const dScanned = win[i].scanned - win[i - 1].scanned
+                  const dMs = win[i].ts - win[i - 1].ts
+                  if (dScanned > 0) intervals.push(dMs / dScanned)  // ms per product
+                }
+                if (intervals.length >= 2) {
+                  // Trimmed mean: drop the single slowest interval
+                  const sorted = [...intervals].sort((a, b) => a - b)
+                  sorted.pop()
+                  const msPerProduct = sorted.reduce((s, v) => s + v, 0) / sorted.length
+                  const remaining = msPerProduct * (billbeeProgress.total - billbeeProgress.scanned) / 1000
+                  remStr = remaining < 60 ? `${Math.round(remaining)} s` : `${(remaining / 60).toFixed(1)} min`
+                }
+              }
+              return `${billbeeProgress.scanned} / ${billbeeProgress.total} gescannt · ${billbeeProgress.found} gefunden · noch ${remStr}`
+            })() : 'Verbinde mit Billbee…'}
+          </div>
+        </>
+      )}
 
       {/* Sheet import form */}
       {importOpen && (

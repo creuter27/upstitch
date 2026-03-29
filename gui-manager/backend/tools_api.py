@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import subprocess
@@ -7,6 +8,7 @@ from typing import Any
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 
 from auth import get_current_user
 from db import User
@@ -447,7 +449,7 @@ def get_inventory_products(
 
 
 @router.get("/api/tools/{tool_id}/inventory/products/billbee")
-def get_inventory_products_billbee(
+async def get_inventory_products_billbee(
     tool_id: str,
     manufacturers: str = "",
     category: str = "",
@@ -455,18 +457,14 @@ def get_inventory_products_billbee(
     color: str = "",
     variant: str = "",
     current_user: User = Depends(get_current_user),
-) -> dict:
+) -> StreamingResponse:
     """
-    Load non-BOM products directly from the Billbee API for the given manufacturers.
+    Stream non-BOM products from the Billbee API as SSE (text/event-stream).
 
-    Query params:
-      manufacturers  Comma-separated manufacturer codes (required)
-      category       Filter by Produktkategorie (substring, optional)
-      size           Filter by Produktgröße (substring, optional)
-      color          Filter by Produktfarbe (substring, optional)
-      variant        Filter by Produktvariante (substring, optional)
-
-    Returns {"products": [...], "errors": [...]}.
+    Each event is a JSON line:
+      {"type":"product","data":{...}}
+      {"type":"error","data":{"manufacturer":"*","error":"..."}}
+      {"type":"done","total":N}
     """
     manifest = get_tool_by_id(tool_id)
     if manifest is None:
@@ -485,8 +483,32 @@ def get_inventory_products_billbee(
     if color:    args += ["--color",    color]
     if variant:  args += ["--variant",  variant]
 
-    # Allow extra time — iterates full catalog
-    return _run_tool_script(python, script, args, timeout=300)
+    async def generate():
+        proc = await asyncio.create_subprocess_exec(
+            python, script, *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            async for raw in proc.stdout:
+                line = raw.decode().strip()
+                if line:
+                    yield f"data: {line}\n\n"
+        except asyncio.CancelledError:
+            proc.terminate()
+            raise
+        finally:
+            await proc.wait()
+            if proc.returncode not in (0, None, -15):
+                err = (await proc.stderr.read()).decode().strip()
+                error_evt = json.dumps({"type": "error", "data": {"manufacturer": "*", "error": err}})
+                yield f"data: {error_evt}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/api/tools/{tool_id}/inventory/stock/query")

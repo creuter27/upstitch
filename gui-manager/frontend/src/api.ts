@@ -231,6 +231,7 @@ export interface InventoryProduct {
   color: string
   variant: string
   stockTarget: number | null
+  cachedStock?: number | null   // present when loaded directly from Billbee
 }
 
 // ---------------------------------------------------------------------------
@@ -251,13 +252,50 @@ export async function getInventoryProducts(
   return res.json()
 }
 
-export async function getInventoryProductsFromBillbee(
+export interface BillbeeStreamProgress { scanned: number; total: number; found: number }
+
+export async function streamInventoryProductsFromBillbee(
   toolId: string,
   manufacturers: string[],
-): Promise<{ products: InventoryProduct[]; errors: { manufacturer: string; error: string }[] }> {
+  onProduct: (product: InventoryProduct) => void,
+  onProgress?: (p: BillbeeStreamProgress) => void,
+  signal?: AbortSignal,
+): Promise<{ errors: { manufacturer: string; error: string }[] }> {
   const params = new URLSearchParams({ manufacturers: manufacturers.join(',') })
-  const res = await apiFetch(`/tools/${toolId}/inventory/products/billbee?${params}`)
-  return res.json()
+  const token = getToken()
+  const res = await fetch(`${BASE_URL}/tools/${toolId}/inventory/products/billbee?${params}`, {
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    signal,
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`HTTP ${res.status}: ${text}`)
+  }
+  const errors: { manufacturer: string; error: string }[] = []
+  const reader = res.body!.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop()!
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        try {
+          const evt = JSON.parse(line.slice(6))
+          if (evt.type === 'product') onProduct(evt.data as InventoryProduct)
+          else if (evt.type === 'progress') onProgress?.(evt as BillbeeStreamProgress)
+          else if (evt.type === 'error') errors.push(evt.data)
+        } catch { /* non-JSON line from subprocess — ignore */ }
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  return { errors }
 }
 
 export async function queryInventoryStock(
