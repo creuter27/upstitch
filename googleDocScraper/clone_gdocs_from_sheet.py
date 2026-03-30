@@ -179,7 +179,8 @@ def find_existing_clone(drive, file_name, folder_id):
 def clone_one(drive, creds, file_id, folder_id):
     """
     Returns (new_id, method).  method = 'already-owned' | 'existing-clone' |
-    'copy' | 'export+upload' | 'failed' | 'not-found-or-no-access' | 'unsupported-mime:...'
+    'copy' | 'export+upload' | 'screenshot' | 'failed' |
+    'not-found-or-no-access' | 'unsupported-mime:...'
     """
     info = get_file_info(drive, file_id)
     if not info:
@@ -210,6 +211,15 @@ def clone_one(drive, creds, file_id, folder_id):
     if new_id:
         print(f"    [export+upload]  → {new_id}")
         return new_id, "export+upload"
+
+    print(f"    [export blocked]  → trying screenshot+OCR …")
+    try:
+        from screenshot_fallback import screenshot_clone
+        new_id = screenshot_clone(drive, creds, file_id, info, folder_id)
+        if new_id:
+            return new_id, "screenshot"
+    except ImportError:
+        pass  # playwright/pymupdf/pytesseract not installed — skip silently
 
     return None, "failed"
 
@@ -242,6 +252,29 @@ def _replace_ids(text, id_map):
 # ---------------------------------------------------------------------------
 
 
+CELL_FIELDS = (
+    "sheets(properties(title,sheetId),"
+    "data(rowData(values("
+    "userEnteredValue,"
+    "hyperlink,"
+    "userEnteredFormat(textFormat(link)),"
+    "textFormatRuns,"
+    "chipRuns"
+    "))))"
+)
+
+
+def _fetch_tab(sheets_svc, spreadsheet_id, title):
+    """Fetch cell data for a single tab by name. Returns the raw sheets list."""
+    result = sheets_svc.spreadsheets().get(
+        spreadsheetId=spreadsheet_id,
+        ranges=[f"'{title}'"],
+        includeGridData=True,
+        fields=CELL_FIELDS,
+    ).execute()
+    return result.get("sheets", [])
+
+
 def scan_all_tabs(sheets_svc, spreadsheet_id):
     """
     Returns:
@@ -249,89 +282,86 @@ def scan_all_tabs(sheets_svc, spreadsheet_id):
               Each cell dict: {r0, c0, val, hyperlink, text_format_runs, chip_runs}
         all_file_ids: set of Drive file IDs found anywhere
         all_importrange_ids: set
+
+    Fetches each tab individually to avoid hitting the Sheets API response-size
+    limit that silently truncates chipRun data when all tabs are fetched at once.
     """
-    print("Fetching full cell data …")
-    result = sheets_svc.spreadsheets().get(
+    # First get just the tab metadata (lightweight)
+    meta = sheets_svc.spreadsheets().get(
         spreadsheetId=spreadsheet_id,
-        includeGridData=True,
-        fields=(
-            "sheets(properties(title,sheetId),"
-            "data(rowData(values("
-            "userEnteredValue,"
-            "hyperlink,"
-            "userEnteredFormat(textFormat(link)),"
-            "textFormatRuns,"
-            "chipRuns"
-            "))))"
-        ),
+        fields="sheets(properties(title,sheetId))",
     ).execute()
+    tab_meta = [(s["properties"]["title"], s["properties"]["sheetId"])
+                for s in meta.get("sheets", [])]
+
+    print(f"Fetching cell data tab-by-tab ({len(tab_meta)} tabs) …")
 
     tabs                = []
     all_file_ids        = set()
     all_importrange_ids = set()
 
-    for sheet in result.get("sheets", []):
-        title    = sheet["properties"]["title"]
-        sheet_id = sheet["properties"]["sheetId"]
+    for title, sheet_id in tab_meta:
+        sheets_result = _fetch_tab(sheets_svc, spreadsheet_id, title)
         cells    = []
 
-        for grid_data in sheet.get("data", []):
-            for r, row_data in enumerate(grid_data.get("rowData", [])):
-                for c, cell in enumerate(row_data.get("values", [])):
-                    # 1. formula / plain value
-                    uev = cell.get("userEnteredValue", {})
-                    if "formulaValue" in uev:
-                        val = uev["formulaValue"]
-                    elif "stringValue" in uev:
-                        val = uev["stringValue"]
-                    elif "numberValue" in uev:
-                        val = str(uev["numberValue"])
-                    else:
-                        val = ""
+        for sheet in sheets_result:
+            for grid_data in sheet.get("data", []):
+                for r, row_data in enumerate(grid_data.get("rowData", [])):
+                    for c, cell in enumerate(row_data.get("values", [])):
+                        # 1. formula / plain value
+                        uev = cell.get("userEnteredValue", {})
+                        if "formulaValue" in uev:
+                            val = uev["formulaValue"]
+                        elif "stringValue" in uev:
+                            val = uev["stringValue"]
+                        elif "numberValue" in uev:
+                            val = str(uev["numberValue"])
+                        else:
+                            val = ""
 
-                    # 2. cell-level hyperlink
-                    hyperlink = cell.get("hyperlink") or (
-                        cell.get("userEnteredFormat", {})
-                            .get("textFormat", {})
-                            .get("link", {})
-                            .get("uri")
-                    )
-
-                    # 3. textFormatRuns
-                    text_format_runs = cell.get("textFormatRuns", [])
-
-                    # 4. chipRuns (smart chip embeds)
-                    chip_runs = cell.get("chipRuns", [])
-
-                    if not val and not hyperlink and not text_format_runs and not chip_runs:
-                        continue
-
-                    cells.append({
-                        "r0": r, "c0": c,
-                        "val": val,
-                        "is_formula": "formulaValue" in uev,
-                        "hyperlink": hyperlink,
-                        "text_format_runs": text_format_runs,
-                        "chip_runs": chip_runs,
-                    })
-
-                    # Collect all referenced IDs
-                    for fid in _ids_from_text(val):
-                        all_file_ids.add(fid)
-                    for fid in _ids_from_text(hyperlink):
-                        all_file_ids.add(fid)
-                    for run in text_format_runs:
-                        uri = run.get("format", {}).get("link", {}).get("uri", "")
-                        for fid in _ids_from_text(uri):
-                            all_file_ids.add(fid)
-                    for chip_run in chip_runs:
-                        uri = (
-                            chip_run.get("chip", {})
-                                    .get("richLinkProperties", {})
-                                    .get("uri", "")
+                        # 2. cell-level hyperlink
+                        hyperlink = cell.get("hyperlink") or (
+                            cell.get("userEnteredFormat", {})
+                                .get("textFormat", {})
+                                .get("link", {})
+                                .get("uri")
                         )
-                        for fid in _ids_from_text(uri):
+
+                        # 3. textFormatRuns
+                        text_format_runs = cell.get("textFormatRuns", [])
+
+                        # 4. chipRuns (smart chip embeds)
+                        chip_runs = cell.get("chipRuns", [])
+
+                        if not val and not hyperlink and not text_format_runs and not chip_runs:
+                            continue
+
+                        cells.append({
+                            "r0": r, "c0": c,
+                            "val": val,
+                            "is_formula": "formulaValue" in uev,
+                            "hyperlink": hyperlink,
+                            "text_format_runs": text_format_runs,
+                            "chip_runs": chip_runs,
+                        })
+
+                        # Collect all referenced IDs
+                        for fid in _ids_from_text(val):
                             all_file_ids.add(fid)
+                        for fid in _ids_from_text(hyperlink):
+                            all_file_ids.add(fid)
+                        for run in text_format_runs:
+                            uri = run.get("format", {}).get("link", {}).get("uri", "")
+                            for fid in _ids_from_text(uri):
+                                all_file_ids.add(fid)
+                        for chip_run in chip_runs:
+                            uri = (
+                                chip_run.get("chip", {})
+                                        .get("richLinkProperties", {})
+                                        .get("uri", "")
+                            )
+                            for fid in _ids_from_text(uri):
+                                all_file_ids.add(fid)
 
         # Count how many cells in this tab have any Drive links
         drive_count = sum(
@@ -508,7 +538,8 @@ def rewrite_sheet_links(spreadsheet, sheets_svc, tabs, id_map):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--sheet", required=True, help="Google Sheet URL or ID")
+    parser.add_argument("--sheet", default=None,
+                        help="Google Sheet URL or ID (overrides config.yaml sheet_url)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Scan only, no cloning or sheet updates")
     parser.add_argument("--rewrite-only", action="store_true",
@@ -519,9 +550,13 @@ def main():
     destination_folder = config.get("destination_folder", "Cloned Docs")
     print(f"Destination folder: '{destination_folder}'  (edit config.yaml to change)\n")
 
+    sheet_ref = args.sheet or config.get("sheet_url")
+    if not sheet_ref:
+        parser.error("Provide --sheet or set sheet_url in config.yaml")
+
     creds             = _get_credentials()
     drive, sheets_svc = build_services(creds)
-    spreadsheet       = open_sheet(args.sheet)
+    spreadsheet       = open_sheet(sheet_ref)
     sheet_id          = spreadsheet.id
     print(f"Opened sheet: '{spreadsheet.title}'  (id={sheet_id})\n")
 

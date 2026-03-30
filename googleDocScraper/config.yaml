@@ -3,3 +3,4 @@
 # Google Drive folder name where cloned files will be placed.
 # The folder will be created if it doesn't already exist.
 destination_folder: GNOpartners
+sheet_url: "https://docs.google.com/spreadsheets/d/1lJm11z1SEZ5pgRD3PcJ7lNDy4XfS6q6pus23HwpRNcs/edit?gid=671153589#gid=671153589"

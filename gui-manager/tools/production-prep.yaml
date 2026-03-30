@@ -7,19 +7,19 @@ panel_type: production-prep
 functions:
   - name: "Start"
     command: "./run.sh"
-    description: "Führt alle drei Schritte nacheinander aus: Adressen & Verpackung korrigieren, Dokumente abrufen, Versandlabels erstellen."
+    description: "Führt alle vier Schritte nacheinander aus: Dokumente abrufen, Designs importieren, Adressen & Verpackung korrigieren, Versandlabels erstellen."
     is_launch: true
+    supports_dry_run: true
+  - name: "fetchDocuments"
+    command: "./fetchDocuments.sh"
+    description: "Lädt Rechnungen und Lieferscheine von Billbee / Google Drive."
     supports_dry_run: true
   - name: "importDesigns"
     command: "./importDesigns.sh"
     description: "Importiert die Design-CSV als neues datumsbasiertes Tab in 'Upstitch Design Sheet'. Öffnet das Tab danach im Browser."
   - name: "fixAddressesAndPackaging"
     command: "./fixAddressesAndPackaging.sh"
-    description: "Korrigiert Lieferadressen und setzt Pakettyp-Tags in Billbee. Danach fetchDocuments ausführen, während Billbee die Versandprofile automatisch zuweist."
-    supports_dry_run: true
-  - name: "fetchDocuments"
-    command: "./fetchDocuments.sh"
-    description: "Lädt Rechnungen und Lieferscheine von Billbee / Google Drive. Läuft während Billbee im Hintergrund Versandprofile zuweist."
+    description: "Korrigiert Lieferadressen und setzt Pakettyp-Tags in Billbee. Danach getLabels ausführen, während Billbee die Versandprofile automatisch zuweist."
     supports_dry_run: true
   - name: "getLabels"
     command: "./getLabels.sh"

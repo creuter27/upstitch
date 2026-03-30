@@ -28,6 +28,7 @@ Usage (called from main.py or run_labels.py):
 """
 
 import base64
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,6 +46,55 @@ from execution.package_type_store import KEINE_PKG_TYPE as _KEINE_PKG_TYPE
 
 # Full Verpackungstyp tag that means "no label needed"
 _KEINE_TAG = f"{_PKG_TAG_PREFIX} {_KEINE_PKG_TYPE}"
+
+# Billbee order view URL template
+_BILLBEE_ORDER_URL = "https://app.billbee.io/de/order/view/{}"
+
+
+def _wait_interruptible(seconds: int, log_fn=None) -> bool:
+    """
+    Wait for `seconds` with a live countdown. Type 'q' + Enter to quit early.
+    Returns True if quit was requested, False if completed normally.
+    """
+    try:
+        import select as _sel
+        _have_select = sys.platform != "win32"
+    except ImportError:
+        _have_select = False
+
+    for remaining in range(seconds, 0, -1):
+        sys.stdout.write(f"\r  Warte {remaining:3d}s \u2026  (q + Enter zum Abbrechen)  ")
+        sys.stdout.flush()
+        if _have_select:
+            import select as _sel
+            r, _, _ = _sel.select([sys.stdin], [], [], 1.0)
+            if r:
+                line = sys.stdin.readline().strip()
+                if line.lower() == "q":
+                    sys.stdout.write(f"\r{' ' * 58}\r\n")
+                    sys.stdout.flush()
+                    if log_fn:
+                        log_fn("Stopped by user (q).")
+                    return True
+        elif sys.platform == "win32":
+            import msvcrt
+            deadline = time.time() + 1.0
+            while time.time() < deadline:
+                if msvcrt.kbhit():
+                    ch = msvcrt.getch()
+                    if ch in (b"q", b"Q"):
+                        sys.stdout.write(f"\r{' ' * 58}\r\n")
+                        sys.stdout.flush()
+                        if log_fn:
+                            log_fn("Stopped by user (q).")
+                        return True
+                time.sleep(0.05)
+        else:
+            time.sleep(1)
+
+    sys.stdout.write(f"\r{' ' * 58}\r")
+    sys.stdout.flush()
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +233,10 @@ def create_labels_with_polling(
     if not orders:
         return stats
 
+    total_orders = len(orders)
+    _w = len(str(total_orders))   # digit width for counter alignment
+    _resolved = 0                  # count of orders fully resolved
+
     # Pre-fetch shipping providers once — they don't change during a run
     providers: list = []
     try:
@@ -232,11 +286,14 @@ def create_labels_with_polling(
             wait_secs = min(poll_interval_seconds, int(remaining))
 
         if wait_secs > 0:
-            _log(
-                f"  Waiting {wait_secs}s for Billbee to assign package types...",
-                f"  [dim]Waiting {wait_secs}s for Billbee to assign package types...[/]",
-            )
-            time.sleep(wait_secs)
+            if log_fn:
+                log_fn(f"  Waiting {wait_secs}s for Billbee to assign package types...")
+            if _wait_interruptible(wait_secs, log_fn=log_fn):
+                _log(
+                    "  Stopped by user — label creation aborted.",
+                    "  [yellow]Stopped by user — label creation aborted.[/]",
+                )
+                break
 
         now_ts = datetime.now(timezone.utc).timestamp()
         if now_ts >= deadline_ts:
@@ -272,24 +329,38 @@ def create_labels_with_polling(
             fresh_state = fresh_order.get("OrderStateId") or fresh_order.get("State") or 0
             fresh_addr = fresh_order.get("ShippingAddress") or {}
             if fresh_state in _UNSHIPPABLE_STATES:
+                _resolved += 1
                 err = f"Order is {_UNSHIPPABLE_STATES[fresh_state]} — cannot create label"
-                _log(f"  {order_number}  ERROR: {err}", f"  [red]{order_number}[/]  ERROR: {err}")
+                _url = _BILLBEE_ORDER_URL.format(info["order_id"])
+                counter = f"{_resolved:{_w}d} of {total_orders}"
+                _log(
+                    f"  \033[91m✗\033[0m  {counter}:  {order_number}  {err}  {_url}",
+                    f"  [red]✗[/]  [dim]{counter}:[/]  [bold]{order_number}[/]  [red]{err}[/]\n"
+                    f"          [link={_url}]{_url}[/link]",
+                )
                 stats["failed"] += 1
                 stats["errors"].append({
                     "order_number": order_number,
                     "operation": "label creation",
-                    "error": err,
+                    "error": f"{err}  {_url}",
                 })
                 resolved_this_round.add(order_number)
                 continue
             if not any(fresh_addr.values()):
+                _resolved += 1
                 err = "Order has no shipping address — cannot create label"
-                _log(f"  {order_number}  ERROR: {err}", f"  [red]{order_number}[/]  ERROR: {err}")
+                _url = _BILLBEE_ORDER_URL.format(info["order_id"])
+                counter = f"{_resolved:{_w}d} of {total_orders}"
+                _log(
+                    f"  \033[91m✗\033[0m  {counter}:  {order_number}  {err}  {_url}",
+                    f"  [red]✗[/]  [dim]{counter}:[/]  [bold]{order_number}[/]  [red]{err}[/]\n"
+                    f"          [link={_url}]{_url}[/link]",
+                )
                 stats["failed"] += 1
                 stats["errors"].append({
                     "order_number": order_number,
                     "operation": "label creation",
-                    "error": err,
+                    "error": f"{err}  {_url}",
                 })
                 resolved_this_round.add(order_number)
                 continue
@@ -309,21 +380,24 @@ def create_labels_with_polling(
 
             # Orders tagged "Keine => kein Versand" require no shipping label.
             if pkg_tag == _KEINE_TAG:
+                _resolved += 1
+                counter = f"{_resolved:{_w}d} of {total_orders}"
                 _log(
-                    f"  {order_number}  {pkg_tag} — no label needed, skipping",
-                    f"  [yellow]{order_number}[/]  [dim]{pkg_tag} — no label needed, skipping[/]",
+                    f"  \033[32m✓\033[0m  {counter}:  {order_number}  {pkg_tag} — kein Label nötig",
+                    f"  [green]✓[/]  [dim]{counter}:[/]  {order_number}  [dim]{pkg_tag} — kein Label nötig[/]",
                 )
                 stats["skipped"] += 1
                 resolved_this_round.add(order_number)
                 continue
 
             # Skip if a label file for this order already exists in the output dir.
-            # Matches any file whose name contains the order number (external order ID).
             existing = list(output_dir.glob(f"*{order_number}*")) if output_dir.exists() else []
             if existing:
+                _resolved += 1
+                counter = f"{_resolved:{_w}d} of {total_orders}"
                 _log(
-                    f"  {order_number}  label already exists ({existing[0].name}) — skipping",
-                    f"  [yellow]{order_number}[/]  [dim]label already exists ({existing[0].name}) — skipping[/]",
+                    f"  \033[32m✓\033[0m  {counter}:  {order_number}  bereits vorhanden ({existing[0].name})",
+                    f"  [green]✓[/]  [dim]{counter}:[/]  {order_number}  [dim]bereits vorhanden ({existing[0].name})[/]",
                 )
                 stats["skipped"] += 1
                 resolved_this_round.add(order_number)
@@ -345,18 +419,25 @@ def create_labels_with_polling(
 
             if not pid or not ppid:
                 # Config issue — retrying won't help; fail permanently
+                _resolved += 1
+                counter = f"{_resolved:{_w}d} of {total_orders}"
+                _url = _BILLBEE_ORDER_URL.format(info["order_id"])
                 err = (
                     f"Could not resolve shipping provider "
                     f"(ShippingProviderName={fresh_order.get('ShippingProviderName')!r}, "
                     f"ShippingProviderProductName={fresh_order.get('ShippingProviderProductName')!r}). "
                     "Set shipping_provider_id / shipping_provider_product_id in config/settings.yaml."
                 )
-                _log(f"    FAILED (config): {err}", f"    [red]FAILED (config):[/] {err}")
+                _log(
+                    f"  \033[91m✗\033[0m  {counter}:  {order_number}  FAILED (config): {err}  {_url}",
+                    f"  [red]✗[/]  [dim]{counter}:[/]  [bold]{order_number}[/]  [red]FAILED (config):[/] {err}\n"
+                    f"          [link={_url}]{_url}[/link]",
+                )
                 stats["failed"] += 1
                 stats["errors"].append({
                     "order_number": order_number,
                     "operation": "label creation",
-                    "error": err,
+                    "error": f"{err}  {_url}",
                 })
                 resolved_this_round.add(order_number)
                 continue
@@ -366,11 +447,13 @@ def create_labels_with_polling(
                 result = _create_label(client, fresh_order, output_dir,
                                        provider_id=pid, product_id=ppid)
                 if result:
+                    _resolved += 1
+                    counter = f"{_resolved:{_w}d} of {total_orders}"
                     tracking = result["tracking_id"] or "—"
                     path = result["path"]
                     _log(
-                        f"    OK  {path.name}  tracking={tracking}",
-                        f"    [green]OK[/] {path.name}  [dim]tracking={tracking}[/]",
+                        f"  \033[32m✓\033[0m  {counter}:  {order_number}  {path.name}  tracking={tracking}",
+                        f"  [green]✓[/]  [dim]{counter}:[/]  {order_number}  [dim]{path.name}  tracking={tracking}[/]",
                     )
                     stats["created"] += 1
                     resolved_this_round.add(order_number)
@@ -379,23 +462,26 @@ def create_labels_with_polling(
                         try:
                             client.set_order_state(info["order_id"], after_label_state)
                             _log(
-                                f"    State -> {after_label_state}",
-                                f"    [dim]State -> {after_label_state}[/]",
+                                f"      State → {after_label_state}",
+                                f"      [dim]State → {after_label_state}[/]",
                             )
                         except Exception as se:
+                            _url = _BILLBEE_ORDER_URL.format(info["order_id"])
                             err = (f"Label created but could not set order state "
                                    f"to {after_label_state}: {se}")
-                            _log(f"    ERROR: {err}", f"    [red]ERROR:[/] {err}")
+                            _log(f"      ERROR: {err}  {_url}", f"      [red]ERROR:[/] {err}\n      [link={_url}]{_url}[/link]")
                             stats["errors"].append({
                                 "order_number": order_number,
                                 "operation": f"set state -> {after_label_state} after label",
-                                "error": err,
+                                "error": f"{err}  {_url}",
                             })
                 else:
                     # No PDF returned — order already has a label; treat as done
+                    _resolved += 1
+                    counter = f"{_resolved:{_w}d} of {total_orders}"
                     _log(
-                        f"    -- No PDF returned (order already has a label — skipping)",
-                        f"    [yellow]--[/] [dim]No PDF returned (already labeled — skipping)[/]",
+                        f"  \033[32m✓\033[0m  {counter}:  {order_number}  bereits gelabelt — übersprungen",
+                        f"  [green]✓[/]  [dim]{counter}:[/]  {order_number}  [dim]bereits gelabelt — übersprungen[/]",
                     )
                     stats["skipped"] += 1
                     resolved_this_round.add(order_number)
@@ -404,9 +490,10 @@ def create_labels_with_polling(
                 # Transient error (network, Billbee outage, etc.) — keep in pending
                 info["last_error"] = str(e)
                 retry_count += 1
+                _url = _BILLBEE_ORDER_URL.format(info["order_id"])
                 _log(
-                    f"    FAILED — will retry: {e}",
-                    f"    [red]FAILED[/] — will retry: {e}",
+                    f"    FAILED — will retry: {e}  {_url}",
+                    f"    [red]FAILED[/] — will retry: {e}\n    [link={_url}]{_url}[/link]",
                 )
 
         # Remove resolved orders from pending
@@ -439,15 +526,16 @@ def create_labels_with_polling(
                 reason = "no Verpackungstyp tag was set within the timeout (package type unknown)"
             else:
                 reason = info["last_error"]
+            _url = _BILLBEE_ORDER_URL.format(info["order_id"])
             _log(
-                f"  {order_number}  {reason}",
-                f"  [red]{order_number}[/]  {reason}",
+                f"  {order_number}  {reason}  {_url}",
+                f"  [red]{order_number}[/]  {reason}\n  [link={_url}]{_url}[/link]",
             )
             stats["failed"] += 1
             stats["errors"].append({
                 "order_number": order_number,
                 "operation": "label creation",
-                "error": reason,
+                "error": f"{reason}  {_url}",
             })
 
     return stats

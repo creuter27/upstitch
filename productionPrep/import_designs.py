@@ -37,8 +37,10 @@ from google_sheets_client import get_client  # noqa: E402
 # ---------------------------------------------------------------------------
 
 SHEET_NAME     = "Upstitch Design Sheet"
+MAPPINGS_SHEET = "Upstitch Mappings"
 TEMPLATE_TAB   = "Template"
 GARNFARBEN_TAB = "Garnfarben"
+DEFAULTS_TAB   = "Defaults"
 DEFAULT_CSV    = Path(r"Z:\import\designs\export-current-design.csv")
 
 _YELLOW = {"red": 1.0, "green": 1.0, "blue": 0.0}
@@ -52,6 +54,10 @@ DATE_TAB_RE = re.compile(r"^\d{2}-\d{2}-\d{2}(-\d+)?$")
 # Extracts the optional second wish-text line from the "original" field on towel orders.
 # Matches: "Wunschtext Zeile 2 (optional):<captured>(Schrift"
 WUNSCHTEXT2_RE = re.compile(r"Wunschtext Zeile 2 \(optional\):(.+?)\(Schrift", re.IGNORECASE)
+
+# Extracts the personalization text from "Personalisierung: <text>" up to end of line.
+# Used in rule h to auto-fill the text column when it is empty.
+_PERSONALISIERUNG_TEXT_RE = re.compile(r"(?i)Personalisierung:\s*([^\r\n]+)")
 
 # ---------------------------------------------------------------------------
 # Color data (loaded from "Upstitch Mappings" > "Garnfarben")
@@ -88,6 +94,54 @@ def _load_color_data(spreadsheet) -> tuple[set[str], dict[str, str]]:
 
     print(f"[ok] Loaded {len(valid_names)} colors, {len(alias_map)} aliases from '{GARNFARBEN_TAB}'")
     return valid_names, alias_map
+
+
+def _load_stitched_categories(gc) -> set[str] | None:
+    """
+    Read the 'Defaults' tab of 'Upstitch Mappings' and return the set of
+    category values where the 'bestickt' column is truthy.
+
+    Returns None on any error so the caller can fall back to applying rule e
+    unconditionally rather than silently suppressing it.
+    """
+    try:
+        mappings_ss = gc.open(MAPPINGS_SHEET)
+        ws = mappings_ss.worksheet(DEFAULTS_TAB)
+        records = ws.get_all_records()
+    except Exception as e:
+        print(f"[warn] Could not load '{DEFAULTS_TAB}' from '{MAPPINGS_SHEET}': {e}")
+        return None
+
+    if not records:
+        print(f"[warn] '{DEFAULTS_TAB}' tab in '{MAPPINGS_SHEET}' is empty — rule e applies to all rows")
+        return None
+
+    # Find category and bestickt column names (case-insensitive)
+    headers = list(records[0].keys())
+    cat_col = next(
+        (h for h in headers if "kategor" in h.lower() or "categor" in h.lower()), None
+    )
+    bes_col = next(
+        (h for h in headers if h.lower() == "bestickt"), None
+    )
+    if cat_col is None or bes_col is None:
+        missing = []
+        if cat_col is None: missing.append("category column")
+        if bes_col is None: missing.append("'bestickt'")
+        print(f"[warn] '{DEFAULTS_TAB}': could not find {', '.join(missing)} — rule e applies to all rows")
+        return None
+
+    stitched: set[str] = set()
+    for row in records:
+        val = row.get(bes_col)
+        is_stitched = val is True or str(val).strip().upper() in ("TRUE", "1", "JA", "YES")
+        if is_stitched:
+            cat = str(row.get(cat_col, "")).strip()
+            if cat:
+                stitched.add(cat)
+
+    print(f"[ok] Loaded {len(stitched)} stitched category/ies from '{DEFAULTS_TAB}': {sorted(stitched)}")
+    return stitched
 
 
 def _resolve_color(value: str, valid_names: set[str], alias_map: dict[str, str]) -> str | None:
@@ -169,6 +223,7 @@ def _process_rows(
     col_map: dict,
     valid_colors: set[str] | None = None,
     color_alias_map: dict[str, str] | None = None,
+    stitched_categories: set[str] | None = None,
 ) -> tuple[list[list[str]], list[tuple], list[tuple], list[tuple]]:
     """
     Apply value-level transformations to the CSV rows.
@@ -236,15 +291,35 @@ def _process_rows(
                     elif text2_idx is not None:
                         row[text2_idx] = extracted
 
+        # Rule h — remember whether text was originally empty (before rule d clears "X")
+        _text_originally_empty = text_idx is not None and not row[text_idx].strip()
+
         # Rule d — clear lone "X" / "x"
         if text_idx is not None and row[text_idx].strip() in ("x", "X"):
             row[text_idx] = ""
         if text2_idx is not None and row[text2_idx].strip() in ("x", "X"):
             row[text2_idx] = ""
 
+        # Rule h — if text was originally empty, extract personalization from original.
+        # Skip if original contains "ohne name", or if the extracted value is "ohne" / "x".
+        if _text_originally_empty and text_idx is not None and orig_idx is not None:
+            orig = row[orig_idx]
+            if "ohne name" not in orig.lower():
+                _m = _PERSONALISIERUNG_TEXT_RE.search(orig)
+                if _m:
+                    _extracted = _m.group(1).strip()
+                    if _extracted.lower() not in ("ohne", "x", ""):
+                        row[text_idx] = _extracted
+
         # Rule e — extract design code from "original", update design column
-        #          (skip if the found code is already the value, case-insensitive)
-        if orig_idx is not None and design_idx is not None:
+        #          Only applies to stitched categories (bestickt=True in Defaults).
+        #          If stitched_categories is None (failed to load), applies to all rows.
+        _row_category = row[category_idx].strip() if category_idx is not None else ""
+        _is_stitched = (
+            stitched_categories is None
+            or _row_category in stitched_categories
+        )
+        if _is_stitched and orig_idx is not None and design_idx is not None:
             m = DESIGN_RE.search(row[orig_idx])
             if m:
                 new_design = m.group(0).upper()
@@ -404,6 +479,13 @@ def _duplicate_template(spreadsheet, template_id: int, new_name: str):
         }]
     })
     new_sheet_id = response["replies"][0]["duplicateSheet"]["properties"]["sheetId"]
+    # Unhide: Template tab is hidden to avoid clutter; the duplicate inherits that state
+    spreadsheet.batch_update({"requests": [{
+        "updateSheetProperties": {
+            "properties": {"sheetId": new_sheet_id, "hidden": False},
+            "fields": "hidden",
+        }
+    }]})
     return next(ws for ws in spreadsheet.worksheets() if ws.id == new_sheet_id)
 
 
@@ -450,17 +532,20 @@ def main() -> None:
         sys.exit(1)
 
     # ------------------------------------------------------------------
-    # Load color reference data
+    # Load color reference data + stitched-category list
     # ------------------------------------------------------------------
     print(f"[..] Loading color list from '{GARNFARBEN_TAB}' tab …")
     valid_colors, color_alias_map = _load_color_data(spreadsheet)
 
+    print(f"[..] Loading stitched categories from '{MAPPINGS_SHEET}' > '{DEFAULTS_TAB}' …")
+    stitched_categories = _load_stitched_categories(gc)
+
     # ------------------------------------------------------------------
-    # Transform CSV rows (rules d, e, f, g)
+    # Transform CSV rows (rules d, e, f, g, h)
     # ------------------------------------------------------------------
     col_map = _build_col_map(rows[0])
     processed_rows, notes, yellow_cells, red_cells = _process_rows(
-        rows, col_map, valid_colors, color_alias_map
+        rows, col_map, valid_colors, color_alias_map, stitched_categories
     )
     if yellow_cells:
         print(f"[ok] Extracted design code from 'original' in {len(yellow_cells)} row(s)")

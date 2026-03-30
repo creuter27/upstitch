@@ -55,6 +55,10 @@ STATUS_DISPLAY = {
     "error":               "ERROR",
 }
 
+# ANSI colour codes for terminal progress output
+_OK  = "\033[32m✓\033[0m"   # green checkmark
+_ERR = "\033[91m✗\033[0m"   # bright red X
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -465,25 +469,37 @@ def run_billbee(cfg: dict, dry_run: bool, min_date: str,
     if fetch_delivery_note:
         doc_tasks.append(("delivery-note", client.get_delivery_note_pdf))
 
+    # Pre-compute progress metrics
+    total_docs = len(orders) * len(doc_tasks)
+    _w = len(str(total_docs))  # digit width for counter alignment
+    _all_fnames = [
+        build_filename(filename_pattern, order, doc_type, today)
+        for order in orders
+        for doc_type, _ in doc_tasks
+    ]
+    _fn_w = min(max((len(f) for f in _all_fnames), default=40), 65)
+    doc_idx = 0
+
     for order in orders:
         billbee_id = order.get("BillBeeOrderId")
         order_number = order.get("OrderNumber") or order.get("Id") or str(billbee_id)
-        print(f"\n  Order {order_number} (BillBeeOrderId={billbee_id})")
         order_has_missing = False
 
         for doc_type, fetch_fn in doc_tasks:
+            doc_idx += 1
             output_dir = resolve_output_dir(cfg, doc_type)
             filename = build_filename(filename_pattern, order, doc_type, today)
             dest = output_dir / filename
+            counter = f"{doc_idx:{_w}d} of {total_docs}"
 
             if dest.exists():
-                print(f"    [{doc_type}] already exists — skip  ({dest.name})")
                 stats["skipped"] += 1
+                print(f"  {_OK}  {counter}:  {filename:<{_fn_w}}  already present")
                 continue
 
             if dry_run:
-                print(f"    [{doc_type}] DRY RUN — would save to {dest}")
                 stats["ok"] += 1
+                print(f"  {_OK}  {counter}:  {filename:<{_fn_w}}  would download")
                 continue
 
             try:
@@ -492,17 +508,17 @@ def run_billbee(cfg: dict, dry_run: bool, min_date: str,
                 else:
                     pdf_bytes = fetch_fn(billbee_id)
                 if pdf_bytes is None:
-                    print(f"    [{doc_type}] no document yet in Billbee — skip")
                     stats["skipped"] += 1
                     order_has_missing = True
+                    print(f"  {_OK}  {counter}:  {filename:<{_fn_w}}  not in Billbee yet — skip")
                     continue
                 write_pdf(pdf_bytes, dest)
-                print(f"    [{doc_type}] saved  {dest.name}  ({len(pdf_bytes):,} bytes)")
                 stats["ok"] += 1
+                print(f"  {_OK}  {counter}:  {filename:<{_fn_w}}  saved  ({len(pdf_bytes):,} bytes)")
             except Exception as exc:
-                print(f"    [{doc_type}] ERROR: {exc}")
-                traceback.print_exc()
                 stats["errors"] += 1
+                print(f"  {_ERR}  {counter}:  {filename:<{_fn_w}}  ERROR: {exc}")
+                traceback.print_exc()
 
         if order_has_missing:
             missing_order_numbers.append(order_number)
