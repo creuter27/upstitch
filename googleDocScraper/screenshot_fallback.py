@@ -45,7 +45,10 @@ PAGE_HEIGHT_PT = 661   # proportional to A4 aspect ratio
 def _ensure_session() -> str:
     """
     Return path to a valid Playwright storage_state file.
-    If none exists, opens a visible browser for the user to sign in once.
+
+    Extracts Google session cookies directly from the user's Chrome profile
+    (no browser window needed — works as long as Chrome has an active Google
+    login).  Falls back to an interactive browser login if extraction fails.
     """
     SESSIONS_DIR.mkdir(exist_ok=True)
 
@@ -56,88 +59,123 @@ def _ensure_session() -> str:
             "playwright not installed — run: pip install playwright && playwright install chromium"
         )
 
-    if STATE_FILE.exists():
-        return str(STATE_FILE)
+    if not STATE_FILE.exists():
+        _refresh_session_from_chrome()
 
-    print("\n[auth] No saved browser session found.")
-    print("       A browser window will open. Sign in to Google, then press Enter here.")
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
-        ctx     = browser.new_context()
-        page    = ctx.new_page()
-        page.goto("https://accounts.google.com/")
-        input("       Press Enter once you are signed in … ")
-        ctx.storage_state(path=str(STATE_FILE))
-        browser.close()
-    print(f"[auth] Session saved to {STATE_FILE.name}\n")
     return str(STATE_FILE)
+
+
+def _refresh_session_from_chrome():
+    """Extract Google cookies from the local Chrome profile and write STATE_FILE."""
+    import json as _json
+    try:
+        import browser_cookie3
+    except ImportError:
+        raise RuntimeError("browser-cookie3 not installed — run: pip install browser-cookie3")
+
+    print("[auth] Extracting Google cookies from Chrome …")
+    cj = browser_cookie3.chrome(domain_name=".google.com")
+
+    cookies = []
+    for c in cj:
+        # Skip cookies with empty name or value — Playwright rejects them
+        if not c.name or c.value is None:
+            continue
+        # __Host- prefixed cookies must have no Domain attribute; Playwright
+        # rejects them when a domain is set, so drop them (not needed for auth)
+        if c.name.startswith("__Host-"):
+            continue
+        domain = c.domain if c.domain.startswith(".") else f".{c.domain}"
+        cookies.append({
+            "name":     c.name,
+            "value":    c.value,
+            "domain":   domain,
+            "path":     c.path or "/",
+            "expires":  int(c.expires) if c.expires else -1,
+            "httpOnly": False,
+            "secure":   bool(c.secure),
+            "sameSite": "Lax",   # Lax is valid for all cookies; avoids None+secure conflicts
+        })
+
+    STATE_FILE.write_text(_json.dumps({"cookies": cookies, "origins": []}))
+    print(f"[auth] {len(cookies)} cookies saved to {STATE_FILE.name}\n")
 
 
 def _invalidate_session():
     if STATE_FILE.exists():
         STATE_FILE.unlink()
-        print("[auth] Stale session deleted — re-login required next run.")
+    print("[auth] Stale session — refreshing cookies from Chrome …")
+    _refresh_session_from_chrome()
 
 
 # ---------------------------------------------------------------------------
-# Step 1: Render doc as PDF via headless browser
+# Step 1: Render each page of the doc as a PIL image via headless browser
 # ---------------------------------------------------------------------------
 
-def _render_as_pdf(doc_url: str, state_path: str) -> bytes:
+def _render_doc_pages(doc_url: str, state_path: str):
     """
-    Open the Google Doc in headless Chromium, wait for it to fully render,
-    then use Chromium's built-in print engine to produce PDF bytes.
+    Open the Google Doc in headless Chromium and screenshot each .kix-page
+    element individually.
 
-    This works even when the Drive API export endpoint returns 403, because
-    print-to-PDF is a client-side browser operation that the server cannot block.
+    Google Docs renders on HTML5 canvas, so page.pdf() produces blank output.
+    Screenshotting the individual page div elements captures canvas content.
     """
     from playwright.sync_api import sync_playwright
+    from PIL import Image
+    import io as _io
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        ctx     = browser.new_context(storage_state=state_path)
-        page    = ctx.new_page()
+        ctx     = browser.new_context(
+            storage_state=state_path,
+            viewport={"width": 1280, "height": 900},
+        )
+        page = ctx.new_page()
+        for _attempt in range(3):
+            try:
+                page.goto(doc_url, wait_until="load", timeout=60_000)
+                break
+            except Exception:
+                if _attempt == 2:
+                    raise
+                time.sleep(10)
 
-        page.goto(doc_url, wait_until="networkidle", timeout=60_000)
-
-        # Detect redirect to login (stale session)
+        # Detect redirect to login page (stale session)
         if "accounts.google.com" in page.url:
             browser.close()
             raise RuntimeError("session_expired")
 
-        # Wait for the Google Docs editor to be present
+        # Wait for the editor to appear (works for both paged and pageless mode)
         page.wait_for_selector(".kix-appview-editor", timeout=30_000)
-        time.sleep(3)  # Let async rendering finish
 
-        pdf_bytes = page.pdf(
-            format="A4",
-            print_background=True,
-            margin={"top": "0", "right": "0", "bottom": "0", "left": "0"},
-        )
+        # Scroll to bottom and back to force all content to render
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        time.sleep(1)
+        page.evaluate("window.scrollTo(0, 0)")
+        time.sleep(3)
+
+        # Try per-page elements first (paged mode)
+        page_els = page.query_selector_all(".kix-page")
+
+        images = []
+        if page_els:
+            # Paged mode: screenshot each page div individually
+            for el in page_els:
+                png = el.screenshot()
+                images.append(Image.open(_io.BytesIO(png)).convert("RGB"))
+        else:
+            # Pageless mode: full-page screenshot, then slice into A4 chunks
+            png       = page.screenshot(full_page=True)
+            full_img  = Image.open(_io.BytesIO(png)).convert("RGB")
+            w, h      = full_img.size
+            # A4 aspect ratio: 210 × 297 mm → height per "page" at this width
+            page_h    = int(w * 297 / 210)
+            for top in range(0, h, page_h):
+                chunk = full_img.crop((0, top, w, min(top + page_h, h)))
+                images.append(chunk)
+
         browser.close()
 
-    return pdf_bytes
-
-
-# ---------------------------------------------------------------------------
-# Step 2: PDF → PIL images
-# ---------------------------------------------------------------------------
-
-def _pdf_to_images(pdf_bytes: bytes, dpi: int = 150):
-    """Convert PDF bytes to a list of PIL Images."""
-    try:
-        import fitz
-        from PIL import Image
-    except ImportError:
-        raise RuntimeError("pymupdf / pillow not installed — run: pip install pymupdf pillow")
-
-    doc    = fitz.open(stream=pdf_bytes, filetype="pdf")
-    mat    = fitz.Matrix(dpi / 72, dpi / 72)
-    images = []
-    for page in doc:
-        pix = page.get_pixmap(matrix=mat, alpha=False)
-        img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
-        images.append(img)
     return images
 
 
@@ -292,16 +330,15 @@ def screenshot_clone(drive, creds, file_id: str, file_info: dict,
         state_path = _ensure_session()
 
         try:
-            pdf_bytes = _render_as_pdf(doc_url, state_path)
+            images = _render_doc_pages(doc_url, state_path)
         except RuntimeError as e:
             if "session_expired" in str(e):
                 _invalidate_session()
                 state_path = _ensure_session()
-                pdf_bytes  = _render_as_pdf(doc_url, state_path)
+                images = _render_doc_pages(doc_url, state_path)
             else:
                 raise
 
-        images = _pdf_to_images(pdf_bytes)
         if not images or all(_is_blank(img) for img in images):
             print(f"    [screenshot] rendered pages appear blank — skipping")
             return None

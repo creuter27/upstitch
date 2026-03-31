@@ -103,14 +103,23 @@ def build_services(creds):
 
 
 def get_file_info(drive, file_id):
-    try:
-        return drive.files().get(
-            fileId=file_id, fields="id,name,mimeType,ownedByMe"
-        ).execute()
-    except HttpError as e:
-        if e.resp.status in (403, 404):
-            return None
-        raise
+    for attempt in range(3):
+        try:
+            return drive.files().get(
+                fileId=file_id, fields="id,name,mimeType,ownedByMe"
+            ).execute()
+        except HttpError as e:
+            if e.resp.status in (403, 404):
+                return None
+            raise
+        except Exception as e:
+            if attempt < 2:
+                wait = 15 * (attempt + 1)
+                print(f"  [network error] {e} — retrying in {wait}s …")
+                time.sleep(wait)
+            else:
+                print(f"  [network error] giving up on {file_id}: {e}")
+                return None
 
 
 def find_or_create_folder(drive, folder_name):
@@ -587,6 +596,14 @@ def main():
 
         # Step 2: destination folder
         folder_id = find_or_create_folder(drive, destination_folder)
+
+        # Step 2b: if screenshot fallback is available, ensure the browser
+        # session exists NOW (one visible login window, before the clone loop)
+        try:
+            from screenshot_fallback import _ensure_session
+            _ensure_session()
+        except (ImportError, RuntimeError):
+            pass
 
         # Step 3: clone
         print(f"\n{'='*60}")

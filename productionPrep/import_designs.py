@@ -136,7 +136,7 @@ def _load_stitched_categories(gc) -> set[str] | None:
         val = row.get(bes_col)
         is_stitched = val is True or str(val).strip().upper() in ("TRUE", "1", "JA", "YES")
         if is_stitched:
-            cat = str(row.get(cat_col, "")).strip()
+            cat = str(row.get(cat_col, "")).strip().lower()  # lowercase for case-insensitive matching
             if cat:
                 stitched.add(cat)
 
@@ -314,7 +314,7 @@ def _process_rows(
         # Rule e — extract design code from "original", update design column
         #          Only applies to stitched categories (bestickt=True in Defaults).
         #          If stitched_categories is None (failed to load), applies to all rows.
-        _row_category = row[category_idx].strip() if category_idx is not None else ""
+        _row_category = (row[category_idx].strip().lower() if category_idx is not None else "")
         _is_stitched = (
             stitched_categories is None
             or _row_category in stitched_categories

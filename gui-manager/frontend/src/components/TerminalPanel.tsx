@@ -16,6 +16,7 @@ export default function TerminalPanel() {
   const fitAddonRef = useRef<FitAddon | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const mountedRef = useRef(false)
+  const fitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const sendToTerminal = useCallback((command: string) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -136,9 +137,11 @@ export default function TerminalPanel() {
       return true
     })
 
-    // ResizeObserver to auto-fit
+    // ResizeObserver to auto-fit — debounced so xterm only resizes after the
+    // drag settles, preventing corrupted output during active panel resize.
     const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit()
+      if (fitTimerRef.current) clearTimeout(fitTimerRef.current)
+      fitTimerRef.current = setTimeout(() => { fitAddon.fit() }, 50)
     })
     if (containerRef.current) {
       resizeObserver.observe(containerRef.current)
@@ -146,6 +149,7 @@ export default function TerminalPanel() {
 
     return () => {
       resizeObserver.disconnect()
+      if (fitTimerRef.current) clearTimeout(fitTimerRef.current)
       ws.close()
       term.dispose()
       mountedRef.current = false

@@ -36,6 +36,17 @@ from pathlib import Path
 # Tag prefix used to mark the chosen package type on an order
 _PKG_TAG_PREFIX = "Verpackungstyp:"
 
+_CUSTOM_ORDER_SKU_PREFIX = "custom-order"
+
+
+def _is_custom_order(order: dict) -> bool:
+    """Return True if any order item SKU starts with 'custom-order'."""
+    for item in (order.get("OrderItems") or []):
+        sku = ((item.get("Product") or {}).get("SKU") or "").strip()
+        if sku.lower().startswith(_CUSTOM_ORDER_SKU_PREFIX):
+            return True
+    return False
+
 # Billbee state IDs that mean the order cannot be shipped
 _UNSHIPPABLE_STATES = {
     6: "Geloescht (deleted)",
@@ -367,6 +378,36 @@ def create_labels_with_polling(
 
             pkg_tag = _get_package_type_tag(fresh_order)
             if not pkg_tag:
+                # Custom orders without a package type get skipped immediately —
+                # they require manual handling and will never get an auto-assigned tag.
+                if _is_custom_order(fresh_order):
+                    _resolved += 1
+                    counter = f"{_resolved:{_w}d} of {total_orders}"
+                    _url = _BILLBEE_ORDER_URL.format(info["order_id"])
+                    _log(
+                        f"  \033[33m–\033[0m  {counter}:  {order_number}  custom order ohne Verpackungstyp — übersprungen  {_url}",
+                        f"  [yellow]–[/]  [dim]{counter}:[/]  {order_number}  [dim]custom order ohne Verpackungstyp — übersprungen[/]\n"
+                        f"          [link={_url}]{_url}[/link]",
+                    )
+                    stats["skipped"] += 1
+                    resolved_this_round.add(order_number)
+                    if after_label_state:
+                        try:
+                            client.set_order_state(info["order_id"], after_label_state)
+                            _log(
+                                f"      State → {after_label_state}",
+                                f"      [dim]State → {after_label_state}[/]",
+                            )
+                        except Exception as se:
+                            err = (f"Skipped but could not set order state "
+                                   f"to {after_label_state}: {se}")
+                            _log(f"      ERROR: {err}  {_url}", f"      [red]ERROR:[/] {err}\n      [link={_url}]{_url}[/link]")
+                            stats["errors"].append({
+                                "order_number": order_number,
+                                "operation": f"set state -> {after_label_state} after skip",
+                                "error": f"{err}  {_url}",
+                            })
+                    continue
                 info["no_pkg_type"] = True
                 info["last_error"] = None  # expected — not an error yet
                 no_pkg_count += 1
