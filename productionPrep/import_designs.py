@@ -28,9 +28,24 @@ from datetime import datetime
 from pathlib import Path
 
 # Make the google-client sibling repo importable without being installed
-sys.path.insert(0, str(Path(__file__).parent.parent / "google-client"))
+_HERE = Path(__file__).parent
+sys.path.insert(0, str(_HERE.parent / "google-client"))
+sys.path.insert(0, str(_HERE / "execution"))
 
 from google_sheets_client import get_client  # noqa: E402
+from config_loader import load_config as _load_config  # noqa: E402
+
+
+def _default_csv_from_config() -> Path:
+    """Read design_csv from platform config; fall back to the legacy Windows path."""
+    try:
+        cfg = _load_config()
+        p = cfg.get("design_csv")
+        if p:
+            return Path(p).expanduser()
+    except Exception:
+        pass
+    return Path(r"Z:\import\designs\export-current-design.csv")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -41,7 +56,7 @@ MAPPINGS_SHEET = "Upstitch Mappings"
 TEMPLATE_TAB   = "Template"
 GARNFARBEN_TAB = "Garnfarben"
 DEFAULTS_TAB   = "Defaults"
-DEFAULT_CSV    = Path(r"Z:\import\designs\export-current-design.csv")
+DEFAULT_CSV    = None  # resolved at runtime from platform config
 
 _YELLOW = {"red": 1.0, "green": 1.0, "blue": 0.0}
 
@@ -497,9 +512,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Import design CSV as a new tab in Upstitch Design Sheet"
     )
+    _cfg_default = _default_csv_from_config()
     parser.add_argument(
-        "--csv", default=str(DEFAULT_CSV), metavar="PATH",
-        help=f"Path to the CSV file (default: {DEFAULT_CSV})",
+        "--csv", default=str(_cfg_default), metavar="PATH",
+        help=f"Path to the CSV file (default from config: {_cfg_default})",
     )
     parser.add_argument(
         "--date", default=None, metavar="YY-MM-DD",
@@ -507,10 +523,10 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    csv_path = Path(args.csv)
+    csv_path = Path(args.csv).expanduser()
     if not csv_path.exists():
-        print(f"[error] CSV not found: {csv_path}")
-        sys.exit(1)
+        print(f"[skip] Design CSV not found at {csv_path} — skipping import.")
+        sys.exit(0)
 
     rows = _read_csv(csv_path)
     if not rows:

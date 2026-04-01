@@ -184,7 +184,8 @@ def _save_pending_case(
 
 
 def _queue_address_fix(order_id, order_number: str, fix: dict, *,
-                       geo: dict = None, orig_addr: dict = None) -> None:
+                       geo: dict = None, orig_addr: dict = None,
+                       auto_fixed: bool = False) -> None:
     """Queue an address fix for deferred application."""
     parts = []
     for k, v in fix.items():
@@ -197,7 +198,117 @@ def _queue_address_fix(order_id, order_number: str, fix: dict, *,
         "summary": "  |  ".join(parts),
         "geo": geo,
         "orig_addr": orig_addr,
+        "auto_fixed": auto_fixed,
     })
+
+
+def _fix_category(fix: dict) -> str:
+    """Determine display category for an auto-fixed address.
+    Priority (highest wins): city_zip > house_number > street."""
+    keys = set(fix.keys())
+    if keys & {"City", "Zip", "AddressAddition"}:
+        return "city_zip"
+    if "HouseNumber" in keys:
+        return "house_number"
+    if "Street" in keys:
+        return "street"
+    return "other"
+
+
+def _show_fixed_addr_summary(orders: list) -> None:
+    """Show a categorized, numbered list of ALL modified addresses with Maps links.
+    Each entry can be re-edited: restore original, keep fixed, or manually edit."""
+    entries = [ch for ch in _pending_changes if ch["type"] == "address"]
+    if not entries:
+        return
+
+    CAT_ORDER = {"street": 0, "house_number": 1, "city_zip": 2, "other": 3}
+    CAT_LABEL = {
+        "street": "Street fixes",
+        "house_number": "House number fixes",
+        "city_zip": "City / ZIP fixes",
+        "other": "Other fixes",
+    }
+    entries.sort(key=lambda ch: CAT_ORDER.get(_fix_category(ch["fix"]), 3))
+    order_by_id = {(o.get("BillBeeOrderId") or o.get("Id")): o for o in orders}
+
+    while True:
+        console.print()
+        console.print(f"  [bold]Modified addresses ({len(entries)}):[/]")
+
+        last_cat = None
+        for i, ch in enumerate(entries, 1):
+            cat = _fix_category(ch["fix"])
+            if cat != last_cat:
+                console.print(f"\n  [dim]── {CAT_LABEL.get(cat, cat)} ──[/]")
+                last_cat = cat
+
+            order = order_by_id.get(ch["order_id"])
+            name, flag = _order_name_flag(order) if order else (ch["order_number"], "")
+            tag = " [cyan][auto][/cyan]" if ch.get("auto_fixed") else ""
+
+            orig = ch.get("orig_addr") or {}
+            changes = "  |  ".join(
+                f"{k}: [dim]{orig.get(k, '')}[/] → [cyan]{v}[/]"
+                for k, v in ch["fix"].items()
+            )
+            url = _maps_url({**orig, **ch["fix"]})
+            console.print(
+                f"  [bold]{i}.[/] [dim]{name} {flag}[/]{tag}  {changes}"
+                f"  [link={url}][dim]Maps[/dim][/link]"
+            )
+
+        console.print()
+        raw = Prompt.ask(
+            "  [dim]Enter number to edit, or Enter to continue[/]",
+            default="",
+        ).strip()
+        if not raw:
+            break
+
+        try:
+            n = int(raw)
+        except ValueError:
+            console.print("  [red]Enter a number or press Enter to continue.[/]")
+            continue
+
+        if not (1 <= n <= len(entries)):
+            console.print(f"  [red]Enter a number between 1 and {len(entries)}.[/]")
+            continue
+
+        ch = entries[n - 1]
+        orig = ch.get("orig_addr") or {}
+        current_fix = {**orig, **ch["fix"]}
+        order = order_by_id.get(ch["order_id"])
+        if order:
+            _display_order_header(order)
+        _display_address_table(orig, current_fix)
+        _display_geocode_components(ch.get("geo"))
+        console.print()
+
+        choice = Prompt.ask(
+            "  [bold green]\\[o][/] Restore original  "
+            "[bold cyan]\\[f][/] Keep fixed  "
+            "[bold yellow]\\[e][/] Re-edit",
+            choices=["o", "f", "e"],
+            default="f",
+        ).lower()
+
+        if choice == "o":
+            # Restore original: remove all fix fields that came from orig
+            ch["fix"] = {}
+            ch["summary"] = "[original restored]"
+            console.print("  [dim]Restored to original address.[/]")
+        elif choice == "f":
+            console.print("  [dim]Keeping fixed address.[/]")
+        else:
+            edits = _prompt_edit(current_fix)
+            if edits:
+                ch["fix"] = {**ch["fix"], **edits}
+                ch["summary"] = "  |  ".join(f"{k}: {v}" for k, v in ch["fix"].items())
+                console.print("  [dim]Updated.[/]")
+            else:
+                console.print("  [dim]No changes.[/]")
 
 
 def _queue_package_type(order_id, order_number: str, order: dict,
@@ -261,9 +372,12 @@ def _edit_pending_by_order_index(order_idx_1based: int, orders: list) -> None:
     if existing:
         existing["fix"] = new_fix
         existing["summary"] = "  |  ".join(f"{k}: {v}" for k, v in new_fix.items())
+        # Preserve the original address (never overwrite with an intermediate state)
+        if not existing.get("orig_addr"):
+            existing["orig_addr"] = dict(addr)
         console.print("  [dim]Updated.[/]")
     else:
-        _queue_address_fix(order_id, order_number, new_fix)
+        _queue_address_fix(order_id, order_number, new_fix, orig_addr=dict(addr))
         console.print("  [dim]Queued.[/]")
 
 
@@ -977,14 +1091,19 @@ def process_order(
     order_index: int = 0,
     order_count: int = 0,
     force_manual: bool = False,
+    defer_manual: bool = False,
 ) -> tuple[str, str]:
     """
     Process one order: check address + assign package type.
     Changes are queued in _pending_changes, not written to Billbee immediately.
 
     Returns (addr_result, pkg_result) where:
-      addr_result: 'fixed' | 'rejected' | 'skipped' | 'no_issue'
-      pkg_result:  'auto'  | 'set'      | 'skipped' | 'no_items'
+      addr_result: 'fixed' | 'rejected' | 'skipped' | 'no_issue' | 'deferred'
+      pkg_result:  'auto'  | 'set'      | 'skipped' | 'no_items' | 'deferred'
+
+    When defer_manual=True, orders that require manual address intervention are
+    not processed interactively; instead they return ('deferred', 'deferred') so
+    the caller can collect them and present them all at once after the main loop.
     """
     addr = order.get("ShippingAddress", {})
     order_id = order.get("BillBeeOrderId") or order.get("Id")
@@ -1132,7 +1251,7 @@ def process_order(
         pkg_str = f"  [dim]{_e('📦', 'PKG')} {pkg_name}[/]" if pkg_name else ""
         if geo_auto_apply:
             _queue_address_fix(order_id, order_number, geo_suggestion,
-                               geo=geo, orig_addr=dict(addr))
+                               geo=geo, orig_addr=dict(addr), auto_fixed=True)
             feedback_store.append({
                 "order_id": order_id, "order_number": order_number,
                 "original": dict(addr), "suggested": geo_suggestion,
@@ -1154,12 +1273,19 @@ def process_order(
             )
             return "no_issue", pkg_result
 
+    # Defer orders that need manual address intervention until after the main loop
+    if defer_manual and has_addr_issues and not geo_auto_apply:
+        name, flag = _order_name_flag(order)
+        counter = f"[dim][{order_index}/{order_count}][/]  " if order_index else ""
+        console.print(f"  {counter}[dim]{name} {flag}[/]  [yellow]↷ deferred[/]")
+        return "deferred", "deferred"
+
     _display_order_header(order, idx=order_index, total=order_count)
     addr_result = "no_issue"
 
     if geo_auto_apply:
         _queue_address_fix(order_id, order_number, geo_suggestion,
-                           geo=geo, orig_addr=dict(addr))
+                           geo=geo, orig_addr=dict(addr), auto_fixed=True)
         feedback_store.append({
             "order_id": order_id, "order_number": order_number,
             "original": dict(addr), "suggested": geo_suggestion,
@@ -1287,32 +1413,67 @@ def _run_order_loop(
     n = len(processable)
     label = " [yellow bold](manual mode)[/]" if force_manual else ""
     console.print(f"\n[cyan]Checking {n} orders...{label}[/]")
+
+    common_kwargs = dict(
+        skip_geocode=skip_geocode,
+        recent_feedback=recent_feedback,
+        by_id=by_id, by_sku=by_sku, field_defs=field_defs,
+        pkg_types=pkg_types,
+        force_manual=force_manual,
+    )
+
+    def _tally(addr_result: str, pkg_result: str) -> None:
+        if addr_result not in ("deferred", "quit"):
+            stats[addr_result] = stats.get(addr_result, 0) + 1
+        if pkg_result == "auto":
+            stats["pkg_auto"] += 1
+        elif pkg_result == "set":
+            stats["pkg_set"] += 1
+        elif pkg_result == "skipped":
+            stats["pkg_skipped"] += 1
+
+    deferred_orders: list[dict] = []
+    quit_requested = False
+
     try:
         for i, order in enumerate(processable, 1):
             addr_result, pkg_result = process_order(
-                order=order,
-                skip_geocode=skip_geocode,
-                recent_feedback=recent_feedback,
-                by_id=by_id,
-                by_sku=by_sku,
-                field_defs=field_defs,
-                pkg_types=pkg_types,
-                order_index=i,
-                order_count=n,
-                force_manual=force_manual,
+                order=order, order_index=i, order_count=n,
+                defer_manual=(not force_manual),
+                **common_kwargs,
             )
             if addr_result == "quit":
                 console.print("\n[dim]Quit.[/]")
+                quit_requested = True
                 break
-            stats[addr_result] = stats.get(addr_result, 0) + 1
-            if pkg_result == "auto":
-                stats["pkg_auto"] += 1
-            elif pkg_result == "set":
-                stats["pkg_set"] += 1
-            elif pkg_result == "skipped":
-                stats["pkg_skipped"] += 1
+            if addr_result == "deferred":
+                deferred_orders.append(order)
+            else:
+                _tally(addr_result, pkg_result)
     except KeyboardInterrupt:
         console.print("\n[dim]Interrupted.[/]")
+        return stats
+
+    # ── Deferred: manual address review ──────────────────────────────────────
+    if deferred_orders and not quit_requested:
+        nd = len(deferred_orders)
+        console.print(
+            f"\n[cyan]Manual address review — {nd} order(s) need attention:[/]"
+        )
+        try:
+            for i, order in enumerate(deferred_orders, 1):
+                addr_result, pkg_result = process_order(
+                    order=order, order_index=i, order_count=nd,
+                    defer_manual=False,
+                    **common_kwargs,
+                )
+                if addr_result == "quit":
+                    console.print("\n[dim]Quit.[/]")
+                    break
+                _tally(addr_result, pkg_result)
+        except KeyboardInterrupt:
+            console.print("\n[dim]Interrupted.[/]")
+
     return stats
 
 
@@ -1437,6 +1598,9 @@ def main() -> None:
         for e in order_errors:
             lines.append(f"  [bold]{e['order_number']}[/]  —  {e['reason']}")
         console.print(Panel("\n".join(lines), border_style="red", title="[bold red]Errors[/]"))
+
+    # ── Modified address review ───────────────────────────────────────────────
+    _show_fixed_addr_summary(orders)
 
     # ── Pending changes: confirm before writing to Billbee ───────────────────
     _show_pending_summary()

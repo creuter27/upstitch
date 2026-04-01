@@ -7,3 +7,5 @@ output_dir_delivery_note: Z:/import/upstitch/delivery-notes
 
 shipping_labels:
   label_folder: "Z:/import/upstitch/shipping-labels/raw"
+
+design_csv: Z:/import/designs/export-current-design.csv

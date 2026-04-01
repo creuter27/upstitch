@@ -1,1 +1,20 @@
-cases: []
+cases:
+- description: 'Auto: Order #306-8174789-1607519 (AT)'
+  timestamp: '2026-04-01T05:22:11Z'
+  outcome: manually_edited
+  addr:
+    FirstName: Chalimat
+    LastName: Zibajewa
+    Street: Rehstraße 4/ Tür
+    HouseNumber: '2'
+    Zip: '3451'
+    City: Michelhausen
+    CountryISO2: AT
+  expected_issues: []
+  expected_fix: {}
+  system_suggestion:
+    Street: Rehstraße
+  user_edit:
+    Street: Rehstraße
+    HouseNumber: '4'
+    AddressAddition: Tür 2

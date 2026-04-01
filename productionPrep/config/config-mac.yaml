@@ -8,3 +8,5 @@ output_dir_delivery_note: ~/Downloads/upstitch/delivery-notes
 
 shipping_labels:
   label_folder: "~/Downloads/upstitch/shipping-labels"
+
+design_csv: ~/Downloads/upstitch/export-current-design.csv

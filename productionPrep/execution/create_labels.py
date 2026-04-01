@@ -59,7 +59,7 @@ from execution.package_type_store import KEINE_PKG_TYPE as _KEINE_PKG_TYPE
 _KEINE_TAG = f"{_PKG_TAG_PREFIX} {_KEINE_PKG_TYPE}"
 
 # Billbee order view URL template
-_BILLBEE_ORDER_URL = "https://app.billbee.io/de/order/view/{}"
+_BILLBEE_ORDER_URL = "https://app.billbee.io/app_v2/order/view/{}"
 
 
 def _wait_interruptible(seconds: int, log_fn=None) -> bool:
