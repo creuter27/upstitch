@@ -60,8 +60,14 @@ DEFAULT_CSV    = None  # resolved at runtime from platform config
 
 _YELLOW = {"red": 1.0, "green": 1.0, "blue": 0.0}
 
-# Design code: letter M (case-insensitive) followed by 1–4 digits
-DESIGN_RE = re.compile(r"(?i)M[0-9]{1,4}")
+# Design code: letter M (case-insensitive) followed by 1–4 digits.
+# \b on the left prevents matching inside longer words like "SM10".
+# No \b on the right: stops naturally at the first non-digit (e.g. M103-10.8 → M103).
+DESIGN_RE = re.compile(r"(?i)\bM[0-9]{1,4}")
+
+# Matches a valid M### design at the start, optionally followed by junk to strip.
+# Used to clean the design column if it already contains M### with extra characters.
+_DESIGN_STRIP_RE = re.compile(r"(?i)^(M[0-9]{1,4})\D.*$")
 
 # Date-pattern tabs: yy-mm-dd or yy-mm-dd-N (suffix from _find_available_tab_name)
 DATE_TAB_RE = re.compile(r"^\d{2}-\d{2}-\d{2}(-\d+)?$")
@@ -137,7 +143,7 @@ def _load_stitched_categories(gc) -> set[str] | None:
         (h for h in headers if "kategor" in h.lower() or "categor" in h.lower()), None
     )
     bes_col = next(
-        (h for h in headers if h.lower() == "bestickt"), None
+        (h for h in headers if h.strip().lower() == "bestickt"), None
     )
     if cat_col is None or bes_col is None:
         missing = []
@@ -326,7 +332,20 @@ def _process_rows(
                     if _extracted.lower() not in ("ohne", "x", ""):
                         row[text_idx] = _extracted
 
-        # Rule e — extract design code from "original", update design column
+        # Rule i — strip trailing non-design text from the design column.
+        #          Applied unconditionally to all rows.
+        #          E.g. "M93(Elefant)" → "M93", "M103-10.8" → "M103".
+        if design_idx is not None:
+            _raw_design = row[design_idx].strip()
+            _strip_m = _DESIGN_STRIP_RE.match(_raw_design)
+            if _strip_m:
+                _cleaned = _strip_m.group(1).upper()
+                if _cleaned != _raw_design:
+                    notes.append((row_0based, design_idx, f"war {_raw_design}"))
+                    yellow_cells.append((row_0based, design_idx))
+                    row[design_idx] = _cleaned
+
+        # Rule e — extract design code from "original", update design column.
         #          Only applies to stitched categories (bestickt=True in Defaults).
         #          If stitched_categories is None (failed to load), applies to all rows.
         _row_category = (row[category_idx].strip().lower() if category_idx is not None else "")
@@ -338,7 +357,7 @@ def _process_rows(
             m = DESIGN_RE.search(row[orig_idx])
             if m:
                 new_design = m.group(0).upper()
-                old_design = row[design_idx]
+                old_design = row[design_idx]  # may already be cleaned by rule i
                 if new_design != old_design.upper().strip():
                     row[design_idx] = new_design
                     yellow_cells.append((row_0based, design_idx))

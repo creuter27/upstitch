@@ -58,7 +58,8 @@ from execution.package_type_store import KEINE_PKG_TYPE as _KEINE_PKG_TYPE
 # Full Verpackungstyp tag that means "no label needed"
 _KEINE_TAG = f"{_PKG_TAG_PREFIX} {_KEINE_PKG_TYPE}"
 
-# Billbee order view URL template
+# Billbee order view URL — uses the human-readable OrderNumber (e.g. 401234567),
+# not the large internal BillBeeOrderId.
 _BILLBEE_ORDER_URL = "https://app.billbee.io/app_v2/order/view/{}"
 
 
@@ -342,7 +343,7 @@ def create_labels_with_polling(
             if fresh_state in _UNSHIPPABLE_STATES:
                 _resolved += 1
                 err = f"Order is {_UNSHIPPABLE_STATES[fresh_state]} — cannot create label"
-                _url = _BILLBEE_ORDER_URL.format(info["order_id"])
+                _url = _BILLBEE_ORDER_URL.format(order_number)
                 counter = f"{_resolved:{_w}d} of {total_orders}"
                 _log(
                     f"  \033[91m✗\033[0m  {counter}:  {order_number}  {err}  {_url}",
@@ -360,7 +361,7 @@ def create_labels_with_polling(
             if not any(fresh_addr.values()):
                 _resolved += 1
                 err = "Order has no shipping address — cannot create label"
-                _url = _BILLBEE_ORDER_URL.format(info["order_id"])
+                _url = _BILLBEE_ORDER_URL.format(order_number)
                 counter = f"{_resolved:{_w}d} of {total_orders}"
                 _log(
                     f"  \033[91m✗\033[0m  {counter}:  {order_number}  {err}  {_url}",
@@ -383,7 +384,7 @@ def create_labels_with_polling(
                 if _is_custom_order(fresh_order):
                     _resolved += 1
                     counter = f"{_resolved:{_w}d} of {total_orders}"
-                    _url = _BILLBEE_ORDER_URL.format(info["order_id"])
+                    _url = _BILLBEE_ORDER_URL.format(order_number)
                     _log(
                         f"  \033[33m–\033[0m  {counter}:  {order_number}  custom order ohne Verpackungstyp — übersprungen  {_url}",
                         f"  [yellow]–[/]  [dim]{counter}:[/]  {order_number}  [dim]custom order ohne Verpackungstyp — übersprungen[/]\n"
@@ -462,7 +463,7 @@ def create_labels_with_polling(
                 # Config issue — retrying won't help; fail permanently
                 _resolved += 1
                 counter = f"{_resolved:{_w}d} of {total_orders}"
-                _url = _BILLBEE_ORDER_URL.format(info["order_id"])
+                _url = _BILLBEE_ORDER_URL.format(order_number)
                 err = (
                     f"Could not resolve shipping provider "
                     f"(ShippingProviderName={fresh_order.get('ShippingProviderName')!r}, "
@@ -507,7 +508,7 @@ def create_labels_with_polling(
                                 f"      [dim]State → {after_label_state}[/]",
                             )
                         except Exception as se:
-                            _url = _BILLBEE_ORDER_URL.format(info["order_id"])
+                            _url = _BILLBEE_ORDER_URL.format(order_number)
                             err = (f"Label created but could not set order state "
                                    f"to {after_label_state}: {se}")
                             _log(f"      ERROR: {err}  {_url}", f"      [red]ERROR:[/] {err}\n      [link={_url}]{_url}[/link]")
@@ -531,7 +532,7 @@ def create_labels_with_polling(
                 # Transient error (network, Billbee outage, etc.) — keep in pending
                 info["last_error"] = str(e)
                 retry_count += 1
-                _url = _BILLBEE_ORDER_URL.format(info["order_id"])
+                _url = _BILLBEE_ORDER_URL.format(order_number)
                 _log(
                     f"    FAILED — will retry: {e}  {_url}",
                     f"    [red]FAILED[/] — will retry: {e}\n    [link={_url}]{_url}[/link]",
@@ -567,7 +568,7 @@ def create_labels_with_polling(
                 reason = "no Verpackungstyp tag was set within the timeout (package type unknown)"
             else:
                 reason = info["last_error"]
-            _url = _BILLBEE_ORDER_URL.format(info["order_id"])
+            _url = _BILLBEE_ORDER_URL.format(order_number)
             _log(
                 f"  {order_number}  {reason}  {_url}",
                 f"  [red]{order_number}[/]  {reason}\n  [link={_url}]{_url}[/link]",

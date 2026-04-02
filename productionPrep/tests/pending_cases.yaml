@@ -18,3 +18,22 @@ cases:
     Street: Rehstraße
     HouseNumber: '4'
     AddressAddition: Tür 2
+- description: 'Auto: Order #4020200787 (NL)'
+  timestamp: '2026-04-02T05:28:53Z'
+  outcome: manually_edited
+  addr:
+    FirstName: Ilse
+    LastName: Wilborts
+    Street: Frans Snijderslaan
+    HouseNumber: '15'
+    AddressAddition: '15'
+    Zip: 5642al
+    City: Eindhoven
+    CountryISO2: NL
+  expected_issues: []
+  expected_fix: {}
+  system_suggestion:
+    Zip: 5642 AN
+  user_edit:
+    AddressAddition: ''
+    Zip: 5642 AL

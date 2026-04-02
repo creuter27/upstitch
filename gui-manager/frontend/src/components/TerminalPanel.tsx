@@ -139,9 +139,19 @@ export default function TerminalPanel() {
 
     // ResizeObserver to auto-fit — debounced so xterm only resizes after the
     // drag settles, preventing corrupted output during active panel resize.
+    // After fit: explicitly send the new dimensions to the PTY backend so it
+    // issues SIGWINCH, then force-refresh the terminal viewport so existing
+    // output is redrawn at the correct cursor position.
     const resizeObserver = new ResizeObserver(() => {
       if (fitTimerRef.current) clearTimeout(fitTimerRef.current)
-      fitTimerRef.current = setTimeout(() => { fitAddon.fit() }, 50)
+      fitTimerRef.current = setTimeout(() => {
+        fitAddon.fit()
+        const { cols, rows } = term
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'resize', cols, rows }))
+        }
+        term.refresh(0, rows - 1)
+      }, 150)
     })
     if (containerRef.current) {
       resizeObserver.observe(containerRef.current)
@@ -156,10 +166,18 @@ export default function TerminalPanel() {
     }
   }, [])
 
-  // Fit when terminal panel is expanded
+  // Fit when terminal panel is expanded, then sync PTY size and redraw
   useEffect(() => {
-    if (!terminalCollapsed && fitAddonRef.current) {
-      setTimeout(() => fitAddonRef.current?.fit(), 50)
+    if (!terminalCollapsed && fitAddonRef.current && termRef.current) {
+      setTimeout(() => {
+        fitAddonRef.current?.fit()
+        const term = termRef.current!
+        const { cols, rows } = term
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }))
+        }
+        term.refresh(0, rows - 1)
+      }, 150)
     }
   }, [terminalCollapsed])
 
