@@ -1,4 +1,4 @@
-"""Zeigt die ersten Zeilen des '2024'-Tabs."""
+"""Liest alle vorhandenen Einträge aus Tab '2024'."""
 
 import json
 from pathlib import Path
@@ -9,12 +9,8 @@ spreadsheet = open_sheet(CONFIG["sheet_url"])
 ws = spreadsheet.worksheet("2024")
 
 all_values = ws.get_all_values()
-# Zeige erste 10 nicht-leere Zeilen
-count = 0
+print(f"Tab '2024': {len(all_values)} Zeilen\n")
+
 for i, row in enumerate(all_values, 1):
-    non_empty = [(chr(ord("A") + j) if j < 26 else f"A{chr(ord('A')+j-26)}", v) for j, v in enumerate(row[:28]) if v.strip()]
-    if non_empty:
-        print(f"Zeile {i:2d}: " + "  ".join(f"{c}={v!r}" for c, v in non_empty))
-        count += 1
-    if count >= 10:
-        break
+    if row[0].strip():
+        print(f"Zeile {i:2d}: " + "  |  ".join(f"{v}" for v in row[:14] if v.strip()))
