@@ -22,6 +22,7 @@ import argparse
 import csv
 import re
 import sys
+import unicodedata
 import webbrowser
 from difflib import get_close_matches
 from datetime import datetime
@@ -75,6 +76,9 @@ DATE_TAB_RE = re.compile(r"^\d{2}-\d{2}-\d{2}(-\d+)?$")
 # Extracts the optional second wish-text line from the "original" field on towel orders.
 # Matches: "Wunschtext Zeile 2 (optional):<captured>(Schrift"
 WUNSCHTEXT2_RE = re.compile(r"Wunschtext Zeile 2 \(optional\):(.+?)\(Schrift", re.IGNORECASE)
+
+# Substrings that mean "no personalisation" — cells containing these are cleared.
+_NO_NAME_TERMS = ("kein name", "no name")
 
 # Extracts the personalization text from "Personalisierung: <text>" up to end of line.
 # Used in rule h to auto-fill the text column when it is empty.
@@ -157,7 +161,7 @@ def _load_stitched_categories(gc) -> set[str] | None:
         val = row.get(bes_col)
         is_stitched = val is True or str(val).strip().upper() in ("TRUE", "1", "JA", "YES")
         if is_stitched:
-            cat = str(row.get(cat_col, "")).strip().lower()  # lowercase for case-insensitive matching
+            cat = unicodedata.normalize("NFC", str(row.get(cat_col, "")).strip().lower())
             if cat:
                 stitched.add(cat)
 
@@ -315,11 +319,13 @@ def _process_rows(
         # Rule h — remember whether text was originally empty (before rule d clears "X")
         _text_originally_empty = text_idx is not None and not row[text_idx].strip()
 
-        # Rule d — clear lone "X" / "x"
-        if text_idx is not None and row[text_idx].strip() in ("x", "X"):
-            row[text_idx] = ""
-        if text2_idx is not None and row[text2_idx].strip() in ("x", "X"):
-            row[text2_idx] = ""
+        # Rule d — clear lone "X" / "x" and "Kein Name" / "No Name" variants
+        for _ci in (text_idx, text2_idx):
+            if _ci is None:
+                continue
+            _v = row[_ci].strip()
+            if _v in ("x", "X") or any(t in _v.lower() for t in _NO_NAME_TERMS):
+                row[_ci] = ""
 
         # Rule h — if text was originally empty, extract personalization from original.
         # Skip if original contains "ohne name", or if the extracted value is "ohne" / "x".
@@ -348,7 +354,10 @@ def _process_rows(
         # Rule e — extract design code from "original", update design column.
         #          Only applies to stitched categories (bestickt=True in Defaults).
         #          If stitched_categories is None (failed to load), applies to all rows.
-        _row_category = (row[category_idx].strip().lower() if category_idx is not None else "")
+        _row_category = (
+            unicodedata.normalize("NFC", row[category_idx].strip().lower())
+            if category_idx is not None else ""
+        )
         _is_stitched = (
             stitched_categories is None
             or _row_category in stitched_categories

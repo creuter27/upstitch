@@ -2,11 +2,23 @@
 # Billbee's API does not expose Verpackungstypen, so add yours here.
 # Format:
 #   - name: Brief
-#     id: null  # set to Billbee's internal ID if known
+#     id: null        # set to Billbee's internal ID if known
+#     weight_kg: 0.05 # weight of the empty packaging in kg (used for weight checks)
+#
+# Weight logic for "Kleinpaket" and "Warenpost" types:
+#   total = order item weight (ShipWeightKg) + weight_kg of the package type
+#   - If total > 1.0 kg and < 1.25 kg  → cap shipment weight to 1000 g
+#   - If total >= 1.25 kg              → override package type to OP303, use actual weight
 package_types:
   - name: Kleinpaket-Klein
+    weight_kg: 0.1
   - name: Kleinpaket-Max
+    weight_kg: 0.15
   - name: OP303
+    weight_kg: 0.25
   - name: Vogelhauskarton
+    weight_kg: 0.305
   - name: Kapu-karton
+    weight_kg: 0.95
   - name: Keine => kein Versand
+    weight_kg: 0.0

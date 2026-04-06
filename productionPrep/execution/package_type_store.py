@@ -135,7 +135,8 @@ def _load_fallback_yaml() -> list[dict]:
     with open(FALLBACK_YAML, encoding="utf-8") as f:
         data = yaml.safe_load(f)
     return [
-        {"name": entry.get("name", ""), "id": entry.get("id")}
+        {"name": entry.get("name", ""), "id": entry.get("id"),
+         "weight_kg": float(entry.get("weight_kg") or 0.0)}
         for entry in (data or {}).get("package_types", [])
         if entry.get("name")
     ]
@@ -143,7 +144,18 @@ def _load_fallback_yaml() -> list[dict]:
 
 def fetch_package_types(client) -> list[dict]:
     """
-    Return available package types as [{id, name}].
+    Return available package types as [{id, name, weight_kg}].
     Always reads from data/package_types.yaml (no caching).
     """
     return _load_fallback_yaml()
+
+
+def get_weight_for_type(pkg_name: str) -> float:
+    """
+    Return the packaging material weight in kg for the given package type name.
+    Returns 0.0 if the name is not found or has no weight configured.
+    """
+    for entry in _load_fallback_yaml():
+        if entry.get("name", "").strip() == pkg_name.strip():
+            return float(entry.get("weight_kg") or 0.0)
+    return 0.0

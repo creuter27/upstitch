@@ -53,10 +53,19 @@ _UNSHIPPABLE_STATES = {
     8: "Storniert (cancelled)",
 }
 
-from execution.package_type_store import KEINE_PKG_TYPE as _KEINE_PKG_TYPE
+from execution.package_type_store import (
+    KEINE_PKG_TYPE as _KEINE_PKG_TYPE,
+    get_weight_for_type as _get_pkg_weight,
+)
 
 # Full Verpackungstyp tag that means "no label needed"
 _KEINE_TAG = f"{_PKG_TAG_PREFIX} {_KEINE_PKG_TYPE}"
+
+# Package types subject to the 1 kg weight cap / OP303 upgrade logic
+_WEIGHT_CHECK_TYPES = ("kleinpaket", "warenpost")
+_CAP_G = 1000    # if total ≤ this, no cap needed
+_UPGRADE_G = 1250  # if total ≥ this, switch to OP303; otherwise cap to _CAP_G
+_OP303_NAME = "OP303"
 
 # Billbee order view URL — uses the human-readable OrderNumber (e.g. 401234567),
 # not the large internal BillBeeOrderId.
@@ -113,6 +122,31 @@ def _wait_interruptible(seconds: int, log_fn=None) -> bool:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _check_weight_for_pkg_type(
+    pkg_name: str, order_weight_kg: float
+) -> tuple[int, str | None]:
+    """
+    Apply the 1 kg Kleinpaket/Warenpost weight rule.
+
+    Returns (weight_override_g, pkg_name_override) where:
+      weight_override_g  — non-zero means pass this value to the carrier instead
+                           of the order's ShipWeightKg.  0 = no override.
+      pkg_name_override  — non-None means switch to this package type instead
+                           (currently only "OP303").  None = no change.
+    """
+    if not any(t in pkg_name.lower() for t in _WEIGHT_CHECK_TYPES):
+        return 0, None
+
+    pkg_weight_kg = _get_pkg_weight(pkg_name)
+    total_g = int((order_weight_kg + pkg_weight_kg) * 1000)
+
+    if total_g <= _CAP_G:
+        return 0, None  # within limit, no adjustment needed
+    if total_g < _UPGRADE_G:
+        return _CAP_G, None  # cap to 1 000 g
+    return 0, _OP303_NAME  # too heavy → upgrade to OP303
+
+
 def _get_package_type_tag(order: dict) -> str | None:
     """Return the 'Verpackungstyp: ...' tag string if set on the order, else None."""
     for t in (order.get("Tags") or []):
@@ -151,17 +185,20 @@ def _resolve_from_list(providers: list, provider_id: int, product_id: int,
 
 
 def _create_label(client, order: dict, output_dir: Path,
-                  provider_id: int, product_id: int) -> dict | None:
+                  provider_id: int, product_id: int,
+                  weight_override_g: int = 0) -> dict | None:
     """
     Create a carrier shipment label for one order and save the PDF.
 
     Returns a dict with keys path / tracking_id / tracking_url,
     or None if Billbee returned no PDF (order already has a label, etc.).
     Raises on API errors so the caller can catch and retry.
+
+    weight_override_g: if non-zero, use this instead of ShipWeightKg on the order.
     """
     order_id = order.get("BillBeeOrderId") or order.get("Id")
     order_number = order.get("OrderNumber") or str(order_id)
-    weight_g = int((order.get("ShipWeightKg") or 0) * 1000)
+    weight_g = weight_override_g if weight_override_g else int((order.get("ShipWeightKg") or 0) * 1000)
 
     data = client.create_shipment_with_label(
         order_id,
@@ -445,9 +482,53 @@ def create_labels_with_polling(
                 resolved_this_round.add(order_number)
                 continue
 
+            # ── Weight check for Kleinpaket / Warenpost ───────────────────────
+            pkg_name = pkg_tag[len(_PKG_TAG_PREFIX):].strip()
+            order_weight_kg = float(fresh_order.get("ShipWeightKg") or 0)
+            weight_override_g, pkg_name_override = _check_weight_for_pkg_type(
+                pkg_name, order_weight_kg
+            )
+            effective_pkg_name = pkg_name_override or pkg_name
+
+            if weight_override_g:
+                _item_g = order_weight_kg * 1000
+                _pkg_g  = _get_pkg_weight(pkg_name) * 1000
+                _total_g = _item_g + _pkg_g
+                _log(
+                    f"  ⚠ WEIGHT RULE [{order_number}]  {pkg_name}\n"
+                    f"      Items: {_item_g:.0f} g  +  Packaging: {_pkg_g:.0f} g  =  Total: {_total_g:.0f} g\n"
+                    f"      Total > 1 000 g but < 1 250 g → Kleinpaket limit exceeded by a small margin.\n"
+                    f"      Action: shipment weight capped to {weight_override_g} g (carrier treats it as ≤ 1 kg).",
+                    f"  [bold yellow]⚠ Weight rule[/]  [cyan]{order_number}[/]  [dim]{pkg_name}[/]\n"
+                    f"    Items [bold]{_item_g:.0f} g[/]  +  Packaging [bold]{_pkg_g:.0f} g[/]  =  Total [bold]{_total_g:.0f} g[/]  "
+                    f"[dim](> 1 000 g, < 1 250 g)[/]\n"
+                    f"    → Shipment weight [bold]capped to {weight_override_g} g[/] so the order stays in the Kleinpaket rate bracket.",
+                )
+            elif pkg_name_override:
+                _item_g  = order_weight_kg * 1000
+                _pkg_g   = _get_pkg_weight(pkg_name) * 1000
+                _total_g = _item_g + _pkg_g
+                _log(
+                    f"  ⚠ WEIGHT RULE [{order_number}]  {pkg_name}\n"
+                    f"      Items: {_item_g:.0f} g  +  Packaging: {_pkg_g:.0f} g  =  Total: {_total_g:.0f} g\n"
+                    f"      Total ≥ 1 250 g → too heavy for Kleinpaket.\n"
+                    f"      Action: package type upgraded to {_OP303_NAME} (tag updated on order).",
+                    f"  [bold yellow]⚠ Weight rule[/]  [cyan]{order_number}[/]  [dim]{pkg_name}[/]\n"
+                    f"    Items [bold]{_item_g:.0f} g[/]  +  Packaging [bold]{_pkg_g:.0f} g[/]  =  Total [bold]{_total_g:.0f} g[/]  "
+                    f"[dim](≥ 1 250 g)[/]\n"
+                    f"    → Too heavy for Kleinpaket — package type upgraded to [bold]{_OP303_NAME}[/].",
+                )
+                try:
+                    client.set_order_package_type(
+                        info["order_id"], fresh_order, pkg_name=_OP303_NAME
+                    )
+                except Exception as e:
+                    _log(f"    Warning: could not update tag to {_OP303_NAME}: {e}",
+                         f"    [yellow]Warning:[/] could not update tag to {_OP303_NAME}: {e}")
+
             _log(
-                f"  {order_number}  {pkg_tag}  -> creating label...",
-                f"  [cyan]{order_number}[/]  [dim]{pkg_tag}[/]  -> creating label...",
+                f"  {order_number}  {effective_pkg_name}  -> creating label...",
+                f"  [cyan]{order_number}[/]  [dim]{effective_pkg_name}[/]  -> creating label...",
             )
 
             # Resolve provider/product for this order
@@ -487,7 +568,8 @@ def create_labels_with_polling(
             # Attempt label creation — transient errors keep order in pending
             try:
                 result = _create_label(client, fresh_order, output_dir,
-                                       provider_id=pid, product_id=ppid)
+                                       provider_id=pid, product_id=ppid,
+                                       weight_override_g=weight_override_g)
                 if result:
                     _resolved += 1
                     counter = f"{_resolved:{_w}d} of {total_orders}"
