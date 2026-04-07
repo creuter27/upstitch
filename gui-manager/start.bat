@@ -9,7 +9,8 @@ set "FRONTEND_DIR=%~dp0frontend"
 set "RUNDIR=%LOCALAPPDATA%\upstitch-tools\gui-manager"
 
 REM -- Passed via %env:% to PowerShell to avoid batch-to-PS quote issues
-set "PS_BACKEND_EXE=%VENV%\Scripts\uvicorn.exe"
+set "PS_BACKEND_EXE=%VENV%\Scripts\python.exe"
+set "PS_BACKEND_ARGS=-m uvicorn main:app --host 127.0.0.1 --port 8000 --reload"
 set "PS_BACKEND_WD=%~dp0backend"
 set "PS_BACKEND_LOG=%RUNDIR%\backend.log"
 set "PS_BACKEND_PID=%RUNDIR%\backend.pid"
@@ -80,7 +81,7 @@ if not exist "%MODULES%\.bin\vite.cmd" (
 )
 
 REM -- Symlink frontend-src -> frontend on T: -----------------------------------
-rd "%VENV%\frontend-src" 2>nul
+rd /s /q "%VENV%\frontend-src" 2>nul
 mklink /D "%VENV%\frontend-src" "%FRONTEND_DIR%" >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Cannot create directory symlink.
@@ -112,11 +113,7 @@ if exist "%RUNDIR%\frontend.pid" (
 
 REM -- Start backend in background, log to file ---------------------------------
 echo Starting backend...
-powershell -NoProfile -Command ^
-  "$p = Start-Process -NoNewWindow cmd" ^
-  "    -ArgumentList ('/c \"' + $env:PS_BACKEND_EXE + '\" main:app --host 127.0.0.1 --port 8000 --reload >> \"' + $env:PS_BACKEND_LOG + '\" 2>&1')" ^
-  "    -WorkingDirectory $env:PS_BACKEND_WD -PassThru;" ^
-  "[IO.File]::WriteAllText($env:PS_BACKEND_PID, $p.Id.ToString())"
+powershell -NoProfile -Command "$q=[char]34; $a='/c '+$q+$q+$env:PS_BACKEND_EXE+$q+' '+$env:PS_BACKEND_ARGS+' >> '+$q+$env:PS_BACKEND_LOG+$q+' 2>&1'+$q; $p=Start-Process -WindowStyle Hidden cmd -ArgumentList $a -WorkingDirectory $env:PS_BACKEND_WD -PassThru; [IO.File]::WriteAllText($env:PS_BACKEND_PID,$p.Id.ToString())"
 if errorlevel 1 (
     echo [ERROR] Failed to launch backend.
     pause & exit /b 1
@@ -136,11 +133,7 @@ echo   Backend ready.
 
 REM -- Start frontend in background, log to file --------------------------------
 echo Starting frontend...
-powershell -NoProfile -Command ^
-  "$p = Start-Process -NoNewWindow cmd" ^
-  "    -ArgumentList ('/c \"' + $env:PS_VITE + '\" \"' + $env:PS_FRONTEND_SRC + '\" --config \"' + $env:PS_VITE_CFG + '\" >> \"' + $env:PS_FRONTEND_LOG + '\" 2>&1')" ^
-  "    -WorkingDirectory $env:PS_FRONTEND_WD -PassThru;" ^
-  "[IO.File]::WriteAllText($env:PS_FRONTEND_PID, $p.Id.ToString())"
+powershell -NoProfile -Command "$q=[char]34; $a='/c '+$q+$q+$env:PS_VITE+$q+' '+$q+$env:PS_FRONTEND_SRC+$q+' --config '+$q+$env:PS_VITE_CFG+$q+' >> '+$q+$env:PS_FRONTEND_LOG+$q+' 2>&1'+$q; $p=Start-Process -WindowStyle Hidden cmd -ArgumentList $a -WorkingDirectory $env:PS_FRONTEND_WD -PassThru; [IO.File]::WriteAllText($env:PS_FRONTEND_PID,$p.Id.ToString())"
 if errorlevel 1 (
     echo [ERROR] Failed to launch frontend.
     pause & exit /b 1
@@ -158,7 +151,7 @@ if errorlevel 1 (
 )
 echo   Frontend ready.
 
-REM -- Open browser and close this window ---------------------------------------
+REM -- Open browser and schedule window close -----------------------------------
 start http://127.0.0.1:5173
 
 echo.
@@ -169,5 +162,12 @@ echo   Backend  : http://127.0.0.1:8000
 echo   Logs     : %RUNDIR%
 echo   Stop     : stop.bat
 echo.
-timeout /t 4 /nobreak >nul
-exit /b 0
+
+REM -- Get our own PID, launch a hidden PS to close this window after 4s --------
+for /f "tokens=2" %%i in ('tasklist /fi "imagename eq cmd.exe" /fi "windowtitle eq gui-manager*" /fo csv /nh 2^>nul') do (
+    set "SELF_PID=%%~i"
+    goto :got_pid
+)
+:got_pid
+start "" /b powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep 4; Stop-Process -Id %SELF_PID% -Force -ErrorAction SilentlyContinue"
+exit
