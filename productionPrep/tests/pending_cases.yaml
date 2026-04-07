@@ -37,3 +37,25 @@ cases:
   user_edit:
     AddressAddition: ''
     Zip: 5642 AL
+- description: 'Auto: Order #302-5547810-8181931 (DE)'
+  timestamp: '2026-04-07T05:25:22Z'
+  outcome: manually_edited
+  addr:
+    FirstName: Apetri
+    LastName: Marinela
+    Company: Untersbergstraße 6
+    Street: 5 Og Rechts
+    Zip: '81539'
+    City: München
+    CountryISO2: DE
+  expected_issues: []
+  expected_fix: {}
+  system_suggestion:
+    HouseNumber: '5'
+    Street: Ismaninger Straße
+    Zip: '81675'
+  user_edit:
+    Company: Untersbergstraße
+    Street: '5'
+    HouseNumber: '6'
+    AddressAddition: 5 Og Rechts
