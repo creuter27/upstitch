@@ -388,6 +388,34 @@ cases:
       Street: "Bahnstraße"
       HouseNumber: "17"
 
+  # ── Street in Company, original Street is floor/apt info ────────────────────
+  - description: "Company is the real street address; Street contains floor/apt notation"
+    notes: >
+      Real case: Apetri Marinela, DE 81539 München.
+      Company='Untersbergstraße 6' is the actual street address.
+      Street='5 Og Rechts' (= 5. Obergeschoss Rechts) is floor/apt info.
+      OpenCage suggested 'Ismaninger Straße' — a street name that appears nowhere
+      in the original address. That suggestion must be suppressed (road traceability guard).
+      The deterministic fix must parse Company as Street+HouseNumber and move the
+      original Street value to AddressAddition.
+    addr:
+      FirstName: Apetri
+      LastName: Marinela
+      Company: "Untersbergstraße 6"
+      Street: "5 Og Rechts"
+      HouseNumber: ""
+      AddressAddition: ""
+      Zip: "81539"
+      City: "München"
+      CountryISO2: "DE"
+    expected_issues:
+      - STREET_IN_COMPANY_WITH_STREET_FILLED
+    expected_fix:
+      Street: "Untersbergstraße"
+      HouseNumber: "6"
+      AddressAddition: "5 Og Rechts"
+      Company: ""
+
   # ── Missing house number (no number anywhere) ────────────────────────────────
   - description: "Street filled but house number missing and not detectable"
     addr:

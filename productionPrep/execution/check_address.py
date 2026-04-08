@@ -166,17 +166,27 @@ def check(addr: dict) -> list[Issue]:
                 hint="Move the street name from Company to Street (and HouseNumber if embedded). Clear Company if it was just the street.",
             ))
 
-    # 4. Street name entered in Company field even when street exists
-    #    (company contains street suffix AND street is already filled — both filled but company looks wrong)
+    # 4. Street name entered in Company field even when street exists.
+    #    Fires when:
+    #      (a) Company contains a recognised street suffix (catches "Gartenweg 3"), OR
+    #      (b) Company parses as StreetName+HouseNumber — catches German compound names
+    #          like "Untersbergstraße 6" where the suffix is embedded in the word and
+    #          \b boundaries inside _STREET_SUFFIXES don't match.
     if company and street:
-        if _STREET_SUFFIXES.search(company) and not any(
+        _is_business = any(
             w in company.lower() for w in ["gmbh", "ag", "kg", "e.v.", "ug", "ltd", "inc", "bv", "nv", "sarl"]
-        ):
-            issues.append(Issue(
-                code="STREET_IN_COMPANY_WITH_STREET_FILLED",
-                description=f"Company field '{company}' looks like a street name, but Street is also filled with '{street}'.",
-                hint="Check if Company should really be a company name or if this is a street that got entered twice / in the wrong field.",
-            ))
+        )
+        if not _is_business:
+            _company_looks_like_street = bool(_STREET_SUFFIXES.search(company))
+            if not _company_looks_like_street:
+                _m_co = _STREET_HOUSENUMBER_RE.match(company)
+                _company_looks_like_street = bool(_m_co and _m_co.group(1).strip())
+            if _company_looks_like_street:
+                issues.append(Issue(
+                    code="STREET_IN_COMPANY_WITH_STREET_FILLED",
+                    description=f"Company field '{company}' looks like a street address, but Street is also filled with '{street}'.",
+                    hint="Check if Company should really be a company name or if this is a street that got entered twice / in the wrong field.",
+                ))
 
     # 5. Missing ZIP code / country prefix / invalid format
     if not zip_code:

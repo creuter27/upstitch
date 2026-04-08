@@ -231,9 +231,19 @@ def _read_csv(path: Path) -> list[list[str]]:
 # ---------------------------------------------------------------------------
 
 def _build_col_map(headers: list[str]) -> dict[str, int]:
-    """Return lowercase-name → 0-based-index map; warn if expected columns are absent."""
+    """
+    Return lowercase-name → 0-based-index map.
+
+    Also adds short aliases for columns with a 'product' prefix so that
+    e.g. 'productCategory' is accessible as both 'productcategory' and 'category'.
+    """
     mapping = {h.strip().lower(): i for i, h in enumerate(headers)}
-    for name in ("original", "text", "design", "textfont"):
+    for key, idx in list(mapping.items()):
+        if key.startswith("product") and len(key) > 7:
+            alias = key[7:]  # strip "product" prefix
+            if alias not in mapping:
+                mapping[alias] = idx
+    for name in ("original", "text", "design", "textfont", "category"):
         if name not in mapping:
             print(f"[warn] Expected column '{name}' not found in headers.")
     return mapping

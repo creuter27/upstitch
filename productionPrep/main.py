@@ -880,24 +880,41 @@ def _geocode_suggestion(addr: dict, geo: dict | None,
 
     import re as _re
 
+    def _norm_street(s: str) -> str:
+        s = s.lower()
+        s = _re.sub(r"str\.\s*", "straße", s)
+        s = _re.sub(r"(?<![a-zäöüß])str(?![a-zäöüß])", "straße", s)
+        s = _re.sub(r"strasse", "straße", s)
+        s = _re.sub(r"[^\w]", "", s)
+        return s
+
+    def _road_traceable_to_original(road: str) -> bool:
+        """
+        Return True if the suggested road name can be found (normalized) in at
+        least one of the original address fields (Street, Company, AddressAddition).
+        Prevents suggesting streets that are pure OpenCage invention.
+        """
+        norm_road = _norm_street(road)
+        for field in ("Street", "Company", "AddressAddition"):
+            orig = (addr.get(field) or "").strip()
+            if orig and norm_road in _norm_street(orig):
+                return True
+        return False
+
     road = (components.get("road") or components.get("street") or "").strip()
     orig_street = (addr.get("Street") or "").strip()
     if road and road.lower() != orig_street.lower():
         orig_is_verifiable = orig_street and not _re.match(r"^\d+[-–]?\d*[a-zA-Z]?\s*$", orig_street)
         if orig_is_verifiable:
-            fix["Street"] = road
+            # Only suggest the road if it can be traced back to the original address.
+            # Suppresses streets that OpenCage invented from geocoding floor/apt notation.
+            if _road_traceable_to_original(road):
+                fix["Street"] = road
         elif geo_company:
             comp_components = geo_company.get("components", {})
             comp_road = (comp_components.get("road") or comp_components.get("street") or "").strip()
             company_val = (addr.get("Company") or "").strip()
             if comp_road and company_val and geo_company.get("confidence", 0) >= 8:
-                def _norm_street(s: str) -> str:
-                    s = s.lower()
-                    s = _re.sub(r"str\.\s*", "straße", s)
-                    s = _re.sub(r"(?<![a-zäöüß])str(?![a-zäöüß])", "straße", s)
-                    s = _re.sub(r"strasse", "straße", s)
-                    s = _re.sub(r"[^\w]", "", s)
-                    return s
                 if _norm_street(comp_road) == _norm_street(company_val):
                     fix["Street"] = comp_road
 
@@ -955,6 +972,26 @@ def _deterministic_suggestion(addr: dict, issues: list) -> dict:
     """
     fix = {}
     issue_codes = {i.code for i in issues}
+
+    # When Company is a real street address and Street contains floor/apt notation,
+    # Company wins: parse Company → Street+HouseNumber, move Street → AddressAddition.
+    # This must run before HOUSE_NUMBER_AT_START_OF_STREET so that rule's guard
+    # ("HouseNumber" not in fix) prevents it from mangling the result.
+    if "STREET_IN_COMPANY_WITH_STREET_FILLED" in issue_codes and "HouseNumber" not in fix:
+        company = (addr.get("Company") or "").strip()
+        orig_street = (addr.get("Street") or "").strip()
+        if company and not any(w in company.lower() for w in _BUSINESS_INDICATORS):
+            parsed = parse_street_housenumber_floor(company)
+            if parsed and parsed[0].strip():
+                fix["Street"] = parsed[0]
+                fix["HouseNumber"] = parsed[1]
+                fix["Company"] = ""
+                # Move the original Street (and HouseNumber if present) to AddressAddition
+                if not (addr.get("AddressAddition") or "").strip():
+                    orig_hn = (addr.get("HouseNumber") or "").strip()
+                    parts = [p for p in [orig_street, orig_hn] if p]
+                    if parts:
+                        fix["AddressAddition"] = " ".join(parts)
 
     if "HOUSE_NUMBER_IN_STREET" in issue_codes:
         street = (addr.get("Street") or "").strip()
