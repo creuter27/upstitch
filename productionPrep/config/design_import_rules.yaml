@@ -1,0 +1,204 @@
+# design_import_rules.yaml
+#
+# Rules applied to each CSV row during design sheet import.
+# Rules execute in order — order matters when one rule's output feeds the next.
+#
+# ── Condition types ──────────────────────────────────────────────────────────
+#   type: equals          column, values (list), case_insensitive (default true)
+#   type: contains        column, values (list), case_insensitive (default true)
+#   type: not_contains    column, values (list), case_insensitive (default true)
+#   type: matches         column, pattern (regex), flags (e.g. "i"), case_insensitive
+#   type: is_empty        column
+#   type: not_empty       column
+#   type: category_stitched   (no extra fields; uses Defaults tab from Mappings sheet)
+#   all_of / any_of / not: nest any of the above
+#
+# ── Action types ─────────────────────────────────────────────────────────────
+#   type: clear           column
+#   type: extract         from_column, pattern, flags, group (0=full match),
+#                         strip (default true), case (upper/lower),
+#                         to_column, to_column_fallback (use if to_column already filled),
+#                         skip_values (list of lowercased strings — skip if match is one of these),
+#                         skip_if_same_case_insensitive (bool),
+#                         skip_if_unchanged (bool — only run if a prior action in this rule changed to_column)
+#   type: highlight       column, color (yellow | red_white),
+#                         skip_if_unchanged (bool)
+#   type: note            column, text (use {prev_value} for the column's value before this rule),
+#                         skip_if_unchanged (bool)
+#   type: resolve_color   column (normalise against Garnfarben list; mark red if unresolvable)
+#
+# ── for_each_column ──────────────────────────────────────────────────────────
+#   Repeat a rule for each column in the list; use {col} as placeholder in
+#   condition/action column references and values.
+
+rules:
+
+  # ── Rule f ─────────────────────────────────────────────────────────────────
+  # Towel orders: the second personalisation line lives inside the "original"
+  # field. Extract it into "text" (if still empty) or "text2".
+  - id: extract_wunschtext2
+    description: >
+      Towel orders — extract "Wunschtext Zeile 2 (optional)" from original.
+      Writes to text if empty, otherwise to text2.
+    condition:
+      all_of:
+        - type: contains
+          column: category
+          values: ['handtuch']
+        - type: matches
+          column: original
+          pattern: 'Wunschtext Zeile 2 \(optional\):(.+?)\(Schrift'
+          flags: 'i'
+    actions:
+      - type: extract
+        from_column: original
+        pattern: 'Wunschtext Zeile 2 \(optional\):(.+?)\(Schrift'
+        flags: 'i'
+        group: 1
+        strip: true
+        to_column: text
+        to_column_fallback: text2
+
+  # ── Rule h ─────────────────────────────────────────────────────────────────
+  # If text is still empty, try to auto-fill it from "Personalisierung: <name>"
+  # in the original field. Skip placeholder values.
+  - id: extract_personalisierung
+    description: >
+      Auto-fill empty text column from "Personalisierung: <value>" in original.
+      Skips placeholder values (ohne, x).
+    condition:
+      all_of:
+        - type: is_empty
+          column: text
+        - type: not_contains
+          column: original
+          values: ['ohne name']
+        - type: matches
+          column: original
+          pattern: 'Personalisierung:\s*([^\r\n]+)'
+          flags: 'i'
+    actions:
+      - type: extract
+        from_column: original
+        pattern: 'Personalisierung:\s*([^\r\n]+)'
+        flags: 'i'
+        group: 1
+        strip: true
+        skip_values: ['ohne', 'x', '']
+        to_column: text
+
+  # ── Rule d ─────────────────────────────────────────────────────────────────
+  # Clear text / text2 if they contain placeholder "no name" values.
+  - id: clear_no_name
+    description: >
+      Clear text/text2 when the cell contains a "no name" placeholder:
+      a lone "x"/"X", or a string containing "kein name" or "no name".
+    for_each_column: [text, text2]
+    condition:
+      column: '{col}'
+      any_of:
+        - type: equals
+          column: '{col}'
+          values: ['x', 'X']
+        - type: contains
+          column: '{col}'
+          values: ['kein name', 'no name']
+    actions:
+      - type: clear
+        column: '{col}'
+
+  # ── Rule i ─────────────────────────────────────────────────────────────────
+  # Strip trailing non-design text from the design column.
+  # E.g. "M93(Elefant)" → "M93", "M103-10.8" → "M103".
+  - id: strip_design_suffix
+    description: >
+      Strip non-numeric suffix from design column so it contains only the
+      canonical M### code.  Marks the cell yellow and notes the original value.
+    condition:
+      type: matches
+      column: design
+      pattern: '^(M[0-9]{1,4})\D'
+      flags: 'i'
+    actions:
+      - type: extract
+        from_column: design
+        pattern: '^(M[0-9]{1,4})\D'
+        flags: 'i'
+        group: 1
+        case: upper
+        to_column: design
+      - type: highlight
+        column: design
+        color: yellow
+        skip_if_unchanged: true
+      - type: note
+        column: design
+        text: 'war {prev_value}'
+        skip_if_unchanged: true
+
+  # ── Rule e ─────────────────────────────────────────────────────────────────
+  # If original contains a design code (M###), use it as the authoritative
+  # design value — the customer or system put it there explicitly.
+  # Only applies to stitched (bestickt) categories.
+  - id: extract_design_from_original
+    description: >
+      Replace design with the M### code found in original (stitched categories only).
+      Marks the cell yellow and notes what the value was before.
+    condition:
+      all_of:
+        - type: category_stitched
+        - type: matches
+          column: original
+          pattern: '\bM[0-9]{1,4}'
+          flags: 'i'
+    actions:
+      - type: extract
+        from_column: original
+        pattern: '\bM[0-9]{1,4}'
+        flags: 'i'
+        group: 0
+        case: upper
+        to_column: design
+        skip_if_same_case_insensitive: true
+      - type: highlight
+        column: design
+        color: yellow
+        skip_if_unchanged: true
+      - type: note
+        column: design
+        text: 'war {prev_value}'
+        skip_if_unchanged: true
+
+  # ── Rule g ─────────────────────────────────────────────────────────────────
+  # Normalise textColor against the canonical Garnfarben list.
+  # Fuzzy-matches aliases; marks the cell red/white if no match found.
+  - id: resolve_text_color
+    description: >
+      Resolve textColor against the Garnfarben color list.
+      Replaces aliases/typos with the canonical "Name intern".
+      Marks the cell red/white when no match can be found.
+    condition:
+      type: not_empty
+      column: textColor
+    actions:
+      - type: resolve_color
+        column: textColor
+
+  # ── Rule a ─────────────────────────────────────────────────────────────────
+  # When "ohne name" was ordered but a personalisation text is present,
+  # add a warning note on the original cell so the operator is alerted.
+  - id: note_ohne_name_with_text
+    description: >
+      Add a note to the original cell when "ohne name" was ordered but the
+      text column is not empty — a potential data conflict.
+    condition:
+      all_of:
+        - type: contains
+          column: original
+          values: ['ohne name']
+        - type: not_empty
+          column: text
+    actions:
+      - type: note
+        column: original
+        text: 'Ohne Name bestellt aber Name angegeben'

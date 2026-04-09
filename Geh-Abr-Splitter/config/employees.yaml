@@ -1,0 +1,14 @@
+# Geh-Abr-Splitter — Employee email configuration
+#
+# Used by emailBot's send_payslips action to match split payslip PDFs
+# (e.g. Lohn_Martina_Riedenauer_26-03.pdf) to recipient email addresses.
+#
+# The 'name' field must exactly match the employee name as it appears in the
+# DATEV PDF (which becomes the filename stem produced by split_payroll.py).
+
+employees:
+  - name: "Martina Riedenauer"
+    email: "martina.riedenauer@example.com"   # TODO: replace with actual address
+
+  - name: "Quirin Schaal"
+    email: "quirin.schaal@example.com"         # TODO: replace with actual address

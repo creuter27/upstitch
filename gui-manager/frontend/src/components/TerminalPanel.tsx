@@ -150,6 +150,7 @@ export default function TerminalPanel() {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: 'resize', cols, rows }))
         }
+        term.scrollToBottom()
         term.refresh(0, rows - 1)
       }, 150)
     })
@@ -176,6 +177,7 @@ export default function TerminalPanel() {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }))
         }
+        term.scrollToBottom()
         term.refresh(0, rows - 1)
       }, 150)
     }

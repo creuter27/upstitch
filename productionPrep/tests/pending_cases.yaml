@@ -59,3 +59,26 @@ cases:
     Street: '5'
     HouseNumber: '6'
     AddressAddition: 5 Og Rechts
+- description: 'Auto: Order #303-9635339-6569150 (CH)'
+  timestamp: '2026-04-09T05:33:45Z'
+  outcome: manually_edited
+  addr:
+    FirstName: Teuta
+    LastName: Hajdari
+    Company: Am Ribelrain 7
+    Street: '8833'
+    Zip: '8833'
+    City: Samstagern
+    CountryISO2: CH
+  expected_issues: []
+  expected_fix: {}
+  system_suggestion:
+    Street: Am Ribelrain
+    HouseNumber: '7'
+    Company: ''
+    AddressAddition: '8833'
+  user_edit:
+    Company: ''
+    HouseNumber: '7'
+    AddressAddition: Samstagern
+    City: Richterswil

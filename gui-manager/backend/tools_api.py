@@ -361,6 +361,64 @@ def update_packaging(
 
 
 # ---------------------------------------------------------------------------
+# Design import rules
+# ---------------------------------------------------------------------------
+
+_RULES_FILE_REL = os.path.join("config", "design_import_rules.yaml")
+
+
+@router.get("/api/tools/{tool_id}/design-rules")
+def get_design_rules(tool_id: str, current_user: User = Depends(get_current_user)) -> dict:
+    """Return design import rules from config/design_import_rules.yaml."""
+    manifest = get_tool_by_id(tool_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_id}' not found")
+    tool_path = resolve_tool_path(manifest.get("path", ""))
+    rules_file = os.path.join(tool_path, _RULES_FILE_REL)
+    rules = []
+    if os.path.isfile(rules_file):
+        with open(rules_file, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+            rules = data.get("rules", [])
+    return {"rules": rules}
+
+
+@router.post("/api/tools/{tool_id}/design-rules")
+def save_design_rules(
+    tool_id: str,
+    body: dict,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Overwrite config/design_import_rules.yaml with the provided rules list."""
+    manifest = get_tool_by_id(tool_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_id}' not found")
+    tool_path = resolve_tool_path(manifest.get("path", ""))
+    rules_file = os.path.join(tool_path, _RULES_FILE_REL)
+
+    # Read the existing file so we can preserve the top-level comment block
+    existing_header = ""
+    if os.path.isfile(rules_file):
+        with open(rules_file, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("#"):
+                    existing_header += line
+                else:
+                    break
+
+    rules = body.get("rules", [])
+    yaml_body = yaml.dump({"rules": rules}, allow_unicode=True,
+                          default_flow_style=False, sort_keys=False)
+
+    with open(rules_file, "w", encoding="utf-8") as f:
+        if existing_header:
+            f.write(existing_header + "\n")
+        f.write(yaml_body)
+
+    return {"ok": True, "count": len(rules)}
+
+
+# ---------------------------------------------------------------------------
 # Inventory helpers
 # ---------------------------------------------------------------------------
 

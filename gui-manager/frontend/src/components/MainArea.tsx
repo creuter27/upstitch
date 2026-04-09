@@ -6,6 +6,7 @@ import SettingsPage from './SettingsPage'
 import ReorderPanel from './ReorderPanel'
 import PackagingPanel from './PackagingPanel'
 import InventoryPanel from './InventoryPanel'
+import DesignRulesPanel from './DesignRulesPanel'
 
 const TYPE_ICON: Record<string, string> = {
   tool: '🔧',
@@ -92,6 +93,8 @@ export default function MainArea() {
           <PackagingPanel toolId={activeTab.toolId} />
         ) : activeTab.type === 'inventory' && activeTab.toolId ? (
           <InventoryPanel toolId={activeTab.toolId} />
+        ) : activeTab.type === 'design-rules' && activeTab.toolId ? (
+          <DesignRulesPanel toolId={activeTab.toolId} />
         ) : activeTab.type === 'settings' ? (
           <SettingsPage />
         ) : null}

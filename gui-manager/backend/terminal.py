@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -77,6 +78,7 @@ async def terminal_ws(websocket: WebSocket) -> None:
 
         # Start background reader task
         read_task = asyncio.create_task(_read_pty(pty, websocket))
+        last_input_time: float = 0.0
 
         try:
             while True:
@@ -91,6 +93,7 @@ async def terminal_ws(websocket: WebSocket) -> None:
                 if msg_type == "input":
                     data = msg.get("data", "")
                     if data and pty.isalive():
+                        last_input_time = time.monotonic()
                         # pywinpty expects str; ptyprocess expects bytes
                         pty.write(data if _IS_WINDOWS else data.encode("utf-8", errors="replace"))
 
@@ -99,6 +102,11 @@ async def terminal_ws(websocket: WebSocket) -> None:
                     rows = int(msg.get("rows", 24))
                     if pty.isalive():
                         pty.setwinsize(rows, cols)
+                        # If the shell is idle (no input in the last 2 s), write \r so
+                        # the shell redraws its prompt — this resyncs xterm's cursor
+                        # position with the PTY after the viewport reflow.
+                        if time.monotonic() - last_input_time > 2.0:
+                            pty.write("\r" if _IS_WINDOWS else b"\r")
 
         except WebSocketDisconnect:
             pass

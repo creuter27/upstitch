@@ -29,6 +29,9 @@ panels:
   - id: packaging
     name: Verpackung
     panel_type: packaging
+  - id: design-rules
+    name: Design-Regeln
+    panel_type: design-rules
 file_tree:
   - config/
   - data/

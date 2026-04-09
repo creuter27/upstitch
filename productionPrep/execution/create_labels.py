@@ -69,7 +69,7 @@ _OP303_NAME = "OP303"
 
 # Billbee order view URL — uses the human-readable OrderNumber (e.g. 401234567),
 # not the large internal BillBeeOrderId.
-_BILLBEE_ORDER_URL = "https://app.billbee.io/app_v2/order/view/{}"
+_BILLBEE_ORDER_URL = "https://app.billbee.io/app_v2/order?openOrder={}"
 
 
 def _wait_interruptible(seconds: int, log_fn=None) -> bool:
@@ -235,6 +235,7 @@ def create_labels_with_polling(
     provider_id: int = 0,
     product_id: int = 0,
     after_label_state: int = 0,
+    after_pkg_type_state: int = 0,
     timeout_minutes: int = 15,
     poll_interval_seconds: int = 60,
     initial_wait: bool = True,
@@ -525,6 +526,18 @@ def create_labels_with_polling(
                 except Exception as e:
                     _log(f"    Warning: could not update tag to {_OP303_NAME}: {e}",
                          f"    [yellow]Warning:[/] could not update tag to {_OP303_NAME}: {e}")
+                if after_pkg_type_state:
+                    try:
+                        client.set_order_state(info["order_id"], after_pkg_type_state)
+                        _log(
+                            f"      State → {after_pkg_type_state} (re-trigger Billbee automation for {_OP303_NAME})",
+                            f"      [dim]State → {after_pkg_type_state} (re-trigger Billbee automation for {_OP303_NAME})[/]",
+                        )
+                    except Exception as se:
+                        _log(
+                            f"      Warning: could not set state to {after_pkg_type_state} after {_OP303_NAME} upgrade: {se}",
+                            f"      [yellow]Warning:[/] could not set state to {after_pkg_type_state} after {_OP303_NAME} upgrade: {se}",
+                        )
 
             _log(
                 f"  {order_number}  {effective_pkg_name}  -> creating label...",

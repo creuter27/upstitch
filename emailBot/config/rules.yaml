@@ -1,0 +1,67 @@
+# emailBot — Rule Engine Configuration
+#
+# Each rule defines:
+#   name        Display label (also used as key in .state.json)
+#   account     Gmail account address to monitor
+#   conditions  All conditions must match for the rule to trigger
+#   actions     Executed in order when the rule matches
+#
+# Path placeholders:
+#   {prev_month}   replaced with 'yy-mm' for the previous calendar month
+#                  e.g. on 2026-04-09 this becomes '26-03'
+#
+# Action types currently supported:
+#   save_attachments  — download email attachments to a local folder
+#   run_command       — run a shell command (with optional working directory)
+#   send_payslips     — find Lohn_<Name>_<yy-mm>.pdf and email each to its employee
+
+rules:
+
+  - name: "Lohnabrechnungen von Steuerberater"
+    account: upstitch@brandxpand.de
+
+    conditions:
+      # Sender address must contain this substring (case-insensitive)
+      from_contains: "@audax-steuer.de"
+      # At least one of these words must appear in subject OR body
+      subject_or_body_contains:
+        - "Lohn"
+        - "Löhne"
+        - "Lohnabrechnung"
+      # Email must have at least one attachment
+      has_attachments: true
+
+    actions:
+
+      # Step 1 — save the attachment(s) to the monthly subfolder
+      - type: save_attachments
+        folder: "~/Tresorit/Upstitch/Personal/Lohnabrechnungen/{prev_month}"
+        create_if_missing: true
+
+      # Step 2 — split the combined DATEV-PDF into per-employee PDFs
+      # The splitter runs from the Lohnabrechnungen/ parent directory so that
+      # it discovers the {prev_month} subdirectory automatically.
+      #
+      # Password options (pick one and uncomment):
+      #   a) Pass inline (stored in plaintext here):
+      #        command: "... split_payroll.py --password YOUR_PASSWORD"
+      #   b) Put the password in a PW.txt file in the Lohnabrechnungen/ folder
+      #      (split_payroll.py reads it automatically — nothing to change here).
+      - type: run_command
+        command: >
+          ~/.local/share/upstitch-venvs/Geh-Abr-Splitter/bin/python
+          ~/Tresorit/Upstitch/code/Geh-Abr-Splitter/execution/split_payroll.py
+        working_dir: "~/Tresorit/Upstitch/Personal/Lohnabrechnungen"
+
+      # Step 3 — send each Lohn_<Name>_{prev_month}.pdf to its employee
+      - type: send_payslips
+        folder: "~/Tresorit/Upstitch/Personal/Lohnabrechnungen/{prev_month}"
+        employees_config: "../../Geh-Abr-Splitter/config/employees.yaml"
+        sender: upstitch@brandxpand.de
+        subject: "Lohnabrechnung {month_label}"
+        body: |
+          Sehr geehrte/r {name},
+
+          anbei finden Sie Ihre Lohnabrechnung für {month_label}.
+
+          Mit freundlichen Grüßen

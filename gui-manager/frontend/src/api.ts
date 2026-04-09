@@ -115,6 +115,19 @@ export async function updatePackaging(toolId: string, comboKey: string, name: st
   return res.json()
 }
 
+export async function getDesignRules(toolId: string): Promise<{ rules: DesignRule[] }> {
+  const res = await apiFetch(`/tools/${toolId}/design-rules`)
+  return res.json()
+}
+
+export async function saveDesignRules(toolId: string, rules: DesignRule[]): Promise<{ ok: boolean; count: number }> {
+  const res = await apiFetch(`/tools/${toolId}/design-rules`, {
+    method: 'POST',
+    body: JSON.stringify({ rules }),
+  })
+  return res.json()
+}
+
 export async function getToolFileTree(id: string): Promise<FileTreeNode[]> {
   const res = await apiFetch(`/tools/${id}/filetree`)
   return res.json()
@@ -213,6 +226,56 @@ export interface AddStockPreviewItem {
   sheetStockTarget: number | null
   qty: number
   newStock: number | null
+}
+
+// Design rule types (mirrors config/design_import_rules.yaml schema)
+export type ConditionType =
+  | 'equals' | 'contains' | 'not_contains' | 'matches'
+  | 'is_empty' | 'not_empty' | 'category_stitched'
+
+export type ActionType =
+  | 'clear' | 'extract' | 'highlight' | 'note' | 'resolve_color'
+
+export interface SimpleCondition {
+  type: ConditionType
+  column?: string
+  values?: string[]
+  pattern?: string
+  flags?: string
+}
+
+export interface CompositeCondition {
+  all_of?: AnyCondition[]
+  any_of?: AnyCondition[]
+  not?: AnyCondition
+}
+
+export type AnyCondition = SimpleCondition | CompositeCondition
+
+export interface RuleAction {
+  type: ActionType
+  column?: string
+  from_column?: string
+  to_column?: string
+  to_column_fallback?: string
+  pattern?: string
+  flags?: string
+  group?: number
+  strip?: boolean
+  case?: 'upper' | 'lower'
+  skip_values?: string[]
+  skip_if_same_case_insensitive?: boolean
+  skip_if_unchanged?: boolean
+  color?: 'yellow' | 'red_white'
+  text?: string
+}
+
+export interface DesignRule {
+  id: string
+  description?: string
+  for_each_column?: string[]
+  condition?: AnyCondition
+  actions: RuleAction[]
 }
 
 export interface FileTreeNode {

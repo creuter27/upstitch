@@ -137,6 +137,7 @@ def main() -> None:
         provider_id=provider_id,
         product_id=product_id,
         after_label_state=after_label_state,
+        after_pkg_type_state=_after_fix_state,
         timeout_minutes=timeout_minutes,
         initial_wait=False,  # manual run — check immediately, wait between retries
         console=console,
