@@ -346,7 +346,7 @@ def _rotate_csv(csv_path: Path, tab_name: str, processed_rows: list[list[str]]) 
         print(f"[ok] Renamed original CSV → {archive.name}")
 
         # 2. Write processed rows back to the original path
-        with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerows(processed_rows)
         print(f"[ok] Wrote processed CSV → {csv_path.name}")

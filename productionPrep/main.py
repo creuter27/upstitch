@@ -1310,11 +1310,14 @@ def process_order(
             )
             return "no_issue", pkg_result
 
-    # Defer orders that need manual address intervention until after the main loop
-    if defer_manual and has_addr_issues and not geo_auto_apply:
+    # Defer orders that need manual attention until after the scan loop:
+    #   - orders with address issues that weren't auto-fixed
+    #   - custom orders (always need manual package type selection)
+    if defer_manual and ((has_addr_issues and not geo_auto_apply) or is_custom):
         name, flag = _order_name_flag(order)
         counter = f"[dim][{order_index}/{order_count}][/]  " if order_index else ""
-        console.print(f"  {counter}[dim]{name} {flag}[/]  [yellow]↷ deferred[/]")
+        reason = "↷ deferred (custom order)" if is_custom and not has_addr_issues else "↷ deferred"
+        console.print(f"  {counter}[dim]{name} {flag}[/]  [yellow]{reason}[/]")
         return "deferred", "deferred"
 
     _display_order_header(order, idx=order_index, total=order_count)
@@ -1491,11 +1494,11 @@ def _run_order_loop(
         console.print("\n[dim]Interrupted.[/]")
         return stats
 
-    # ── Deferred: manual address review ──────────────────────────────────────
+    # ── Deferred: manual review (address issues + custom orders) ─────────────
     if deferred_orders and not quit_requested:
         nd = len(deferred_orders)
         console.print(
-            f"\n[cyan]Manual address review — {nd} order(s) need attention:[/]"
+            f"\n[cyan]Manual review — {nd} order(s) need attention:[/]"
         )
         try:
             for i, order in enumerate(deferred_orders, 1):

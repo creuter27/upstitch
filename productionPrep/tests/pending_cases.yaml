@@ -82,3 +82,22 @@ cases:
     HouseNumber: '7'
     AddressAddition: Samstagern
     City: Richterswil
+- description: 'Auto: Order #405-8404291-1747563 (IT)'
+  timestamp: '2026-04-10T05:25:52Z'
+  outcome: manually_edited
+  addr:
+    FirstName: Valeria
+    LastName: Resta
+    Street: Via Cesare Battisti 1 Bis
+    AddressAddition: Citofono N. 25 MARCHIORI RESTA
+    Zip: '20854'
+    City: Vedano Al Lambro
+    CountryISO2: IT
+  expected_issues: []
+  expected_fix: {}
+  system_suggestion:
+    Street: Via Cesare Battisti
+    HouseNumber: '1'
+  user_edit:
+    Street: Via Cesare Battisti
+    HouseNumber: '1'

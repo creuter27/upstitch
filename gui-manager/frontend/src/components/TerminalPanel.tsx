@@ -17,6 +17,7 @@ export default function TerminalPanel() {
   const wsRef = useRef<WebSocket | null>(null)
   const mountedRef = useRef(false)
   const fitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pasteInProgressRef = useRef(false)
 
   const sendToTerminal = useCallback((command: string) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -109,7 +110,13 @@ export default function TerminalPanel() {
     }
 
     // Terminal input → WebSocket
+    // If a paste is in progress, the browser may fire a native paste event via
+    // onData (e.g. after granting clipboard permission). Clear the flag and let
+    // it through — the clipboard API promise handler will skip sending.
     term.onData((data) => {
+      if (pasteInProgressRef.current) {
+        pasteInProgressRef.current = false
+      }
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'input', data }))
       }
@@ -131,7 +138,15 @@ export default function TerminalPanel() {
         return false
       }
       if (e.ctrlKey && e.key === 'v') {
-        navigator.clipboard.readText().then((text) => sendToTerminal(text)).catch(() => {})
+        pasteInProgressRef.current = true
+        navigator.clipboard.readText().then((text) => {
+          if (pasteInProgressRef.current) {
+            // No native paste fired — send via clipboard API
+            pasteInProgressRef.current = false
+            sendToTerminal(text)
+          }
+          // If flag already cleared by onData, native paste already sent it
+        }).catch(() => { pasteInProgressRef.current = false })
         return false
       }
       return true
